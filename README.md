@@ -73,8 +73,10 @@ Plugin-Entwicklung & Idee
 
 ## 📄 Lizenz
 
-Dieses Plugin ist **Open Source** und steht unter der **MIT License**.  
-Du darfst es frei nutzen, verändern und teilen – Credits willkommen. 🤝
+Dieses Plugin ist unter der **GNU General Public License v3.0 (GPL-3.0)** lizenziert.  
+Du darfst es frei nutzen, modifizieren und verbreiten, solange du die gleichen Lizenzbedingungen weitergibst.
+
+Weitere Infos: [GPLv3 Lizenz](https://www.gnu.org/licenses/gpl-3.0.de.html)
 
 ---
 
