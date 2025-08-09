@@ -32,7 +32,6 @@ public class ButtonListener implements Listener {
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
         String playerUUID = event.getPlayer().getUniqueId().toString();
-
         ItemStack item = event.getItem();
         Block block = event.getClickedBlock();
 
@@ -46,25 +45,24 @@ public class ButtonListener implements Listener {
                 event.setCancelled(true);
                 List<String> connectedBlocks = dataManager.getConnectedBlocks(playerUUID, buttonId);
                 if (connectedBlocks != null && !connectedBlocks.isEmpty()) {
-
                     boolean anyDoorOpened = false;
                     boolean anyDoorClosed = false;
                     boolean anyLampOn = false;
                     boolean anyLampOff = false;
+                    boolean anyNoteBlockPlayed = false;
 
                     for (String loc : connectedBlocks) {
                         String[] parts = loc.split(",");
                         Location location = new Location(plugin.getServer().getWorld(parts[0]),
-                                                        Integer.parseInt(parts[1]),
-                                                        Integer.parseInt(parts[2]),
-                                                        Integer.parseInt(parts[3]));
+                                Integer.parseInt(parts[1]),
+                                Integer.parseInt(parts[2]),
+                                Integer.parseInt(parts[3]));
                         Block targetBlock = location.getBlock();
                         if (isDoor(targetBlock.getType())) {
                             Door door = (Door) targetBlock.getBlockData();
                             boolean wasOpen = door.isOpen();
                             door.setOpen(!wasOpen);
                             targetBlock.setBlockData(door);
-
                             if (!wasOpen) {
                                 anyDoorOpened = true;
                             } else {
@@ -75,36 +73,44 @@ public class ButtonListener implements Listener {
                             boolean wasLit = lamp.isLit();
                             lamp.setLit(!wasLit);
                             targetBlock.setBlockData(lamp);
-
                             if (!wasLit) {
                                 anyLampOn = true;
                             } else {
                                 anyLampOff = true;
                             }
+                        } else if (targetBlock.getType() == Material.NOTE_BLOCK) {
+                            String instrument = dataManager.getPlayerInstrument(event.getPlayer().getUniqueId());
+                            if (instrument == null) {
+                                instrument = configManager.getConfig().getString("default-note", "PIANO");
+                            }
+                            plugin.playDoorbellSound(location, instrument);
+                            anyNoteBlockPlayed = true;
                         }
                     }
 
                     if (anyDoorOpened) {
-                        event.getPlayer().sendMessage(configManager.getMessage("doors-open"));
+                        event.getPlayer().sendMessage(configManager.getMessage("tueren-geoeffnet"));
                     }
                     if (anyDoorClosed) {
-                        event.getPlayer().sendMessage(configManager.getMessage("doors-closed"));
+                        event.getPlayer().sendMessage(configManager.getMessage("tueren-geschlossen"));
                     }
                     if (anyLampOn) {
-                        event.getPlayer().sendMessage(configManager.getMessage("lamps-on"));
+                        event.getPlayer().sendMessage(configManager.getMessage("lampen-eingeschaltet"));
                     }
                     if (anyLampOff) {
-                        event.getPlayer().sendMessage(configManager.getMessage("lamps-off"));
+                        event.getPlayer().sendMessage(configManager.getMessage("lampen-ausgeschaltet"));
                     }
-
+                    if (anyNoteBlockPlayed) {
+                        event.getPlayer().sendMessage(configManager.getMessage("notenblock-ausgeloest"));
+                    }
                 } else {
-                    event.getPlayer().sendMessage(configManager.getMessage("no-blocks-connected"));
+                    event.getPlayer().sendMessage(configManager.getMessage("keine-bloecke-verbunden"));
                 }
             }
             return;
         }
 
-        if (item == null || (!item.getType().equals(Material.STONE_BUTTON) && !item.getType().equals(Material.DAYLIGHT_DETECTOR))) {
+        if (item == null || (!item.getType().equals(Material.STONE_BUTTON) && !item.getType().equals(Material.DAYLIGHT_DETECTOR) && !item.getType().equals(Material.NOTE_BLOCK))) {
             return;
         }
 
@@ -116,7 +122,7 @@ public class ButtonListener implements Listener {
             return;
         }
 
-        if (isDoor(block.getType()) || block.getType() == Material.REDSTONE_LAMP) {
+        if (isDoor(block.getType()) || block.getType() == Material.REDSTONE_LAMP || block.getType() == Material.NOTE_BLOCK) {
             event.setCancelled(true);
 
             String buttonId = item.getItemMeta().hasLore() ? item.getItemMeta().getLore().get(0) : UUID.randomUUID().toString();
@@ -127,15 +133,21 @@ public class ButtonListener implements Listener {
 
             int maxDoors = configManager.getMaxDoors();
             int maxLamps = configManager.getMaxLamps();
+            int maxNoteBlocks = configManager.getMaxNoteBlocks();
             int doorCount = (int) connectedBlocks.stream().filter(loc -> isDoor(getMaterialFromLocation(loc))).count();
             int lampCount = (int) connectedBlocks.stream().filter(loc -> getMaterialFromLocation(loc) == Material.REDSTONE_LAMP).count();
+            int noteBlockCount = (int) connectedBlocks.stream().filter(loc -> getMaterialFromLocation(loc) == Material.NOTE_BLOCK).count();
 
             if (isDoor(block.getType()) && doorCount >= maxDoors) {
-                event.getPlayer().sendMessage(configManager.getMessage("max-doors-reached"));
+                event.getPlayer().sendMessage(configManager.getMessage("max-tueren-erreicht"));
                 return;
             }
             if (block.getType() == Material.REDSTONE_LAMP && lampCount >= maxLamps) {
-                event.getPlayer().sendMessage(configManager.getMessage("max-lamps-reached"));
+                event.getPlayer().sendMessage(configManager.getMessage("max-lampen-erreicht"));
+                return;
+            }
+            if (block.getType() == Material.NOTE_BLOCK && noteBlockCount >= maxNoteBlocks) {
+                event.getPlayer().sendMessage(configManager.getMessage("max-notenbloecke-erreicht"));
                 return;
             }
 
@@ -144,9 +156,9 @@ public class ButtonListener implements Listener {
                 connectedBlocks.add(blockLocation);
                 dataManager.setConnectedBlocks(playerUUID, buttonId, connectedBlocks);
                 updateButtonLore(item, buttonId);
-                event.getPlayer().sendMessage(configManager.getMessage("block-connected"));
+                event.getPlayer().sendMessage(configManager.getMessage("block-verbunden"));
             } else {
-                event.getPlayer().sendMessage(configManager.getMessage("block-already-connected"));
+                event.getPlayer().sendMessage(configManager.getMessage("block-bereits-verbunden"));
             }
         }
     }
@@ -154,11 +166,10 @@ public class ButtonListener implements Listener {
     @EventHandler
     public void onBlockPlace(BlockPlaceEvent event) {
         String playerUUID = event.getPlayer().getUniqueId().toString();
-
         ItemStack item = event.getItemInHand();
         Block block = event.getBlockPlaced();
 
-        if (item == null || (!item.getType().equals(Material.STONE_BUTTON) && !item.getType().equals(Material.DAYLIGHT_DETECTOR))) {
+        if (item == null || (!item.getType().equals(Material.STONE_BUTTON) && !item.getType().equals(Material.DAYLIGHT_DETECTOR) && !item.getType().equals(Material.NOTE_BLOCK))) {
             return;
         }
 
@@ -169,13 +180,12 @@ public class ButtonListener implements Listener {
         String buttonId = item.getItemMeta().hasLore() ? item.getItemMeta().getLore().get(0) : UUID.randomUUID().toString();
         String blockLocation = block.getWorld().getName() + "," + block.getX() + "," + block.getY() + "," + block.getZ();
         dataManager.addPlacedController(playerUUID, blockLocation, buttonId);
-        event.getPlayer().sendMessage(configManager.getMessage("controller-placed"));
+        event.getPlayer().sendMessage(configManager.getMessage("controller-platziert"));
     }
 
     @EventHandler
     public void onBlockBreak(BlockBreakEvent event) {
         String playerUUID = event.getPlayer().getUniqueId().toString();
-
         Block block = event.getBlock();
         String blockLocation = block.getWorld().getName() + "," + block.getX() + "," + block.getY() + "," + block.getZ();
         String buttonId = dataManager.getButtonIdForPlacedController(playerUUID, blockLocation);
@@ -183,7 +193,7 @@ public class ButtonListener implements Listener {
         if (buttonId != null) {
             dataManager.removePlacedController(playerUUID, blockLocation);
             dataManager.setConnectedBlocks(playerUUID, buttonId, null);
-            event.getPlayer().sendMessage(configManager.getMessage("controller-removed"));
+            event.getPlayer().sendMessage(configManager.getMessage("controller-entfernt"));
         }
     }
 
