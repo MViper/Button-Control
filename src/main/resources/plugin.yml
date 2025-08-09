@@ -1,11 +1,20 @@
 name: ButtonControl
-version: 1.0
+version: 1.1
 main: viper.ButtonControl
 api-version: 1.21
 author: viper
-description: Ein Plugin, um Türen und Redstone-Lampen mit einem Button zu steuern.
+description: Ein Plugin, um Türen, Redstone-Lampen und Notenblöcke mit einem Button oder Tageslichtsensor zu steuern.
 
 commands:
   bc:
-    description: Zeigt Informationen zum Plugin an
-    usage: /<command> info
+    description: Steuert das ButtonControl Plugin
+    usage: /<command> [info|reload|note <instrument>]
+    aliases: [buttoncontrol]
+
+permissions:
+  buttoncontrol.reload:
+    description: Erlaubt das Neuladen der Plugin-Konfiguration
+    default: op
+  buttoncontrol.note:
+    description: Erlaubt das Ändern des Notenblock-Instruments
+    default: true
