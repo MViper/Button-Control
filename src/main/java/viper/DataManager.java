@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 public class DataManager {
     private final ButtonControl plugin;
@@ -24,6 +25,10 @@ public class DataManager {
         if (!dataFile.exists()) {
             plugin.saveResource("data.yml", false);
         }
+        data = YamlConfiguration.loadConfiguration(dataFile);
+    }
+
+    public void reloadData() {
         data = YamlConfiguration.loadConfiguration(dataFile);
     }
 
@@ -62,10 +67,6 @@ public class DataManager {
 
     // --- Neue globale Methoden für Tageslichtsensoren etc. ---
 
-    /**
-     * Gibt alle Controller-Orte aller Spieler zurück (global).
-     * Nützlich für Tageslichtsensoren.
-     */
     public List<String> getAllPlacedControllers() {
         List<String> allControllers = new ArrayList<>();
         if (data.getConfigurationSection("players") == null) {
@@ -78,10 +79,6 @@ public class DataManager {
         return allControllers;
     }
 
-    /**
-     * Holt die Button-ID für einen platzierten Controller an einem Ort, ohne Spieler-UUID (global).
-     * Da Controller pro Spieler gespeichert sind, suchen wir alle Spieler ab.
-     */
     public String getButtonIdForPlacedController(String location) {
         if (data.getConfigurationSection("players") == null) return null;
         Set<String> players = data.getConfigurationSection("players").getKeys(false);
@@ -92,10 +89,6 @@ public class DataManager {
         return null;
     }
 
-    /**
-     * Holt die verbundenen Blöcke für eine Button-ID (global).
-     * Da die verbundenen Blöcke pro Spieler gespeichert sind, suchen wir alle Spieler ab.
-     */
     public List<String> getConnectedBlocks(String buttonId) {
         if (data.getConfigurationSection("players") == null) return null;
         Set<String> players = data.getConfigurationSection("players").getKeys(false);
@@ -106,6 +99,17 @@ public class DataManager {
             }
         }
         return null;
+    }
+
+    // --- Notenblock-Instrument Methoden ---
+
+    public void setPlayerInstrument(UUID playerUUID, String instrument) {
+        data.set("players." + playerUUID.toString() + ".instrument", instrument);
+        saveData();
+    }
+
+    public String getPlayerInstrument(UUID playerUUID) {
+        return data.getString("players." + playerUUID.toString() + ".instrument");
     }
 
     public void saveData() {
