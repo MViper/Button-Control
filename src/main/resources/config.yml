@@ -1,5 +1,6 @@
 max-doors: 20
 max-lamps: 50
+max-bells: 5
 max-noteblocks: 10
 default-note: PIANO
 double-note-enabled: true
