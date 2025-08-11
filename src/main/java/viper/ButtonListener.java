@@ -3,7 +3,7 @@ package viper;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
-import org.bukkit.block.data.type.Door;
+import org.bukkit.block.data.Openable;
 import org.bukkit.block.data.Lightable;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -35,8 +35,9 @@ public class ButtonListener implements Listener {
         ItemStack item = event.getItem();
         Block block = event.getClickedBlock();
 
+        // Block wird gesteuert (Button / Tageslichtsensor)
         if (event.getAction() == Action.RIGHT_CLICK_BLOCK && block != null &&
-            (block.getType() == Material.STONE_BUTTON || block.getType() == Material.DAYLIGHT_DETECTOR)) {
+                (block.getType() == Material.STONE_BUTTON || block.getType() == Material.DAYLIGHT_DETECTOR)) {
 
             String blockLocation = block.getWorld().getName() + "," + block.getX() + "," + block.getY() + "," + block.getZ();
             String buttonId = dataManager.getButtonIdForPlacedController(playerUUID, blockLocation);
@@ -47,9 +48,14 @@ public class ButtonListener implements Listener {
                 if (connectedBlocks != null && !connectedBlocks.isEmpty()) {
                     boolean anyDoorOpened = false;
                     boolean anyDoorClosed = false;
+                    boolean anyGateOpened = false;
+                    boolean anyGateClosed = false;
+                    boolean anyTrapOpened = false;
+                    boolean anyTrapClosed = false;
                     boolean anyLampOn = false;
                     boolean anyLampOff = false;
                     boolean anyNoteBlockPlayed = false;
+                    boolean anyBellPlayed = false;
 
                     for (String loc : connectedBlocks) {
                         String[] parts = loc.split(",");
@@ -58,27 +64,34 @@ public class ButtonListener implements Listener {
                                 Integer.parseInt(parts[2]),
                                 Integer.parseInt(parts[3]));
                         Block targetBlock = location.getBlock();
-                        if (isDoor(targetBlock.getType())) {
-                            Door door = (Door) targetBlock.getBlockData();
-                            boolean wasOpen = door.isOpen();
-                            door.setOpen(!wasOpen);
-                            targetBlock.setBlockData(door);
-                            if (!wasOpen) {
-                                anyDoorOpened = true;
-                            } else {
-                                anyDoorClosed = true;
+
+                        // Türen, Gates, Trapdoors
+                        if (isDoor(targetBlock.getType()) || isGate(targetBlock.getType()) || isTrapdoor(targetBlock.getType())) {
+                            if (targetBlock.getBlockData() instanceof Openable) {
+                                Openable openable = (Openable) targetBlock.getBlockData();
+                                boolean wasOpen = openable.isOpen();
+                                openable.setOpen(!wasOpen);
+                                targetBlock.setBlockData(openable);
+
+                                if (isDoor(targetBlock.getType())) {
+                                    if (!wasOpen) anyDoorOpened = true; else anyDoorClosed = true;
+                                } else if (isGate(targetBlock.getType())) {
+                                    if (!wasOpen) anyGateOpened = true; else anyGateClosed = true;
+                                } else if (isTrapdoor(targetBlock.getType())) {
+                                    if (!wasOpen) anyTrapOpened = true; else anyTrapClosed = true;
+                                }
                             }
-                        } else if (targetBlock.getType() == Material.REDSTONE_LAMP) {
+                        }
+                        // Lampen
+                        else if (targetBlock.getType() == Material.REDSTONE_LAMP) {
                             Lightable lamp = (Lightable) targetBlock.getBlockData();
                             boolean wasLit = lamp.isLit();
                             lamp.setLit(!wasLit);
                             targetBlock.setBlockData(lamp);
-                            if (!wasLit) {
-                                anyLampOn = true;
-                            } else {
-                                anyLampOff = true;
-                            }
-                        } else if (targetBlock.getType() == Material.NOTE_BLOCK) {
+                            if (!wasLit) anyLampOn = true; else anyLampOff = true;
+                        }
+                        // Notenblock
+                        else if (targetBlock.getType() == Material.NOTE_BLOCK) {
                             String instrument = dataManager.getPlayerInstrument(event.getPlayer().getUniqueId());
                             if (instrument == null) {
                                 instrument = configManager.getConfig().getString("default-note", "PIANO");
@@ -86,23 +99,25 @@ public class ButtonListener implements Listener {
                             plugin.playDoorbellSound(location, instrument);
                             anyNoteBlockPlayed = true;
                         }
+                        // Glocke
+                        else if (targetBlock.getType() == Material.BELL) {
+                            targetBlock.getWorld().playSound(location, org.bukkit.Sound.BLOCK_BELL_USE, 3.0f, 1.0f);
+                            anyBellPlayed = true;
+                        }
                     }
 
-                    if (anyDoorOpened) {
-                        event.getPlayer().sendMessage(configManager.getMessage("tueren-geoeffnet"));
-                    }
-                    if (anyDoorClosed) {
-                        event.getPlayer().sendMessage(configManager.getMessage("tueren-geschlossen"));
-                    }
-                    if (anyLampOn) {
-                        event.getPlayer().sendMessage(configManager.getMessage("lampen-eingeschaltet"));
-                    }
-                    if (anyLampOff) {
-                        event.getPlayer().sendMessage(configManager.getMessage("lampen-ausgeschaltet"));
-                    }
-                    if (anyNoteBlockPlayed) {
-                        event.getPlayer().sendMessage(configManager.getMessage("notenblock-ausgeloest"));
-                    }
+                    // Rückmeldungen (ALLE farbig per lang.yml)
+                    if (anyDoorOpened) event.getPlayer().sendMessage(configManager.getMessage("tueren-geoeffnet"));
+                    if (anyDoorClosed) event.getPlayer().sendMessage(configManager.getMessage("tueren-geschlossen"));
+                    if (anyGateOpened) event.getPlayer().sendMessage(configManager.getMessage("gates-geoeffnet"));
+                    if (anyGateClosed) event.getPlayer().sendMessage(configManager.getMessage("gates-geschlossen"));
+                    if (anyTrapOpened) event.getPlayer().sendMessage(configManager.getMessage("fallturen-geoeffnet"));
+                    if (anyTrapClosed) event.getPlayer().sendMessage(configManager.getMessage("fallturen-geschlossen"));
+                    if (anyLampOn) event.getPlayer().sendMessage(configManager.getMessage("lampen-eingeschaltet"));
+                    if (anyLampOff) event.getPlayer().sendMessage(configManager.getMessage("lampen-ausgeschaltet"));
+                    if (anyNoteBlockPlayed) event.getPlayer().sendMessage(configManager.getMessage("notenblock-ausgeloest"));
+                    if (anyBellPlayed) event.getPlayer().sendMessage(configManager.getMessage("glocke-gelaeutet"));
+
                 } else {
                     event.getPlayer().sendMessage(configManager.getMessage("keine-bloecke-verbunden"));
                 }
@@ -110,7 +125,10 @@ public class ButtonListener implements Listener {
             return;
         }
 
-        if (item == null || (!item.getType().equals(Material.STONE_BUTTON) && !item.getType().equals(Material.DAYLIGHT_DETECTOR) && !item.getType().equals(Material.NOTE_BLOCK))) {
+        // Verbindung herstellen
+        if (item == null || (!item.getType().equals(Material.STONE_BUTTON) &&
+                            !item.getType().equals(Material.DAYLIGHT_DETECTOR) &&
+                            !item.getType().equals(Material.NOTE_BLOCK))) {
             return;
         }
 
@@ -122,7 +140,11 @@ public class ButtonListener implements Listener {
             return;
         }
 
-        if (isDoor(block.getType()) || block.getType() == Material.REDSTONE_LAMP || block.getType() == Material.NOTE_BLOCK) {
+        if (isDoor(block.getType()) || isGate(block.getType()) || isTrapdoor(block.getType()) ||
+            block.getType() == Material.REDSTONE_LAMP ||
+            block.getType() == Material.NOTE_BLOCK ||
+            block.getType() == Material.BELL) {
+
             event.setCancelled(true);
 
             String buttonId = item.getItemMeta().hasLore() ? item.getItemMeta().getLore().get(0) : UUID.randomUUID().toString();
@@ -132,14 +154,29 @@ public class ButtonListener implements Listener {
             }
 
             int maxDoors = configManager.getMaxDoors();
+            int maxGates = configManager.getMaxDoors();
+            int maxTraps = configManager.getMaxDoors();
             int maxLamps = configManager.getMaxLamps();
             int maxNoteBlocks = configManager.getMaxNoteBlocks();
+            int maxBells = configManager.getMaxBells();
+
             int doorCount = (int) connectedBlocks.stream().filter(loc -> isDoor(getMaterialFromLocation(loc))).count();
+            int gateCount = (int) connectedBlocks.stream().filter(loc -> isGate(getMaterialFromLocation(loc))).count();
+            int trapCount = (int) connectedBlocks.stream().filter(loc -> isTrapdoor(getMaterialFromLocation(loc))).count();
             int lampCount = (int) connectedBlocks.stream().filter(loc -> getMaterialFromLocation(loc) == Material.REDSTONE_LAMP).count();
             int noteBlockCount = (int) connectedBlocks.stream().filter(loc -> getMaterialFromLocation(loc) == Material.NOTE_BLOCK).count();
+            int bellCount = (int) connectedBlocks.stream().filter(loc -> getMaterialFromLocation(loc) == Material.BELL).count();
 
             if (isDoor(block.getType()) && doorCount >= maxDoors) {
                 event.getPlayer().sendMessage(configManager.getMessage("max-tueren-erreicht"));
+                return;
+            }
+            if (isGate(block.getType()) && gateCount >= maxGates) {
+                event.getPlayer().sendMessage(configManager.getMessage("max-gates-erreicht"));
+                return;
+            }
+            if (isTrapdoor(block.getType()) && trapCount >= maxTraps) {
+                event.getPlayer().sendMessage(configManager.getMessage("max-fallturen-erreicht"));
                 return;
             }
             if (block.getType() == Material.REDSTONE_LAMP && lampCount >= maxLamps) {
@@ -148,6 +185,10 @@ public class ButtonListener implements Listener {
             }
             if (block.getType() == Material.NOTE_BLOCK && noteBlockCount >= maxNoteBlocks) {
                 event.getPlayer().sendMessage(configManager.getMessage("max-notenbloecke-erreicht"));
+                return;
+            }
+            if (block.getType() == Material.BELL && bellCount >= maxBells) {
+                event.getPlayer().sendMessage(configManager.getMessage("max-glocken-erreicht"));
                 return;
             }
 
@@ -169,7 +210,9 @@ public class ButtonListener implements Listener {
         ItemStack item = event.getItemInHand();
         Block block = event.getBlockPlaced();
 
-        if (item == null || (!item.getType().equals(Material.STONE_BUTTON) && !item.getType().equals(Material.DAYLIGHT_DETECTOR) && !item.getType().equals(Material.NOTE_BLOCK))) {
+        if (item == null || (!item.getType().equals(Material.STONE_BUTTON) &&
+                            !item.getType().equals(Material.DAYLIGHT_DETECTOR) &&
+                            !item.getType().equals(Material.NOTE_BLOCK))) {
             return;
         }
 
@@ -199,6 +242,14 @@ public class ButtonListener implements Listener {
 
     private boolean isDoor(Material material) {
         return material.toString().endsWith("_DOOR");
+    }
+
+    private boolean isGate(Material material) {
+        return material.toString().endsWith("_FENCE_GATE");
+    }
+
+    private boolean isTrapdoor(Material material) {
+        return material.toString().endsWith("_TRAPDOOR");
     }
 
     private Material getMaterialFromLocation(String locString) {
