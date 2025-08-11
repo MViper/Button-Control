@@ -17,6 +17,9 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.Note;
 import org.bukkit.Note.Tone;
+import org.bukkit.event.Listener;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.player.PlayerJoinEvent;
 
 import java.util.List;
 import java.util.UUID;
@@ -26,20 +29,83 @@ public class ButtonControl extends JavaPlugin {
     private DataManager dataManager;
 
     @Override
-    public void onEnable() {
-        configManager = new ConfigManager(this);
-        dataManager = new DataManager(this);
+        public void onEnable() {
+            configManager = new ConfigManager(this);
+            dataManager = new DataManager(this);
 
-        // Initialize config with defaults if not present
-        updateConfigWithDefaults();
+            // Spigot Update Checker starten
+            new UpdateChecker(this, 127702).getVersion(version -> {
+                String currentVersion = this.getDescription().getVersion();
 
-        getServer().getPluginManager().registerEvents(new ButtonListener(this, configManager, dataManager), this);
+                // Normalisiere "version", "v", "v." am Anfang, dann trimmen
+                String normalizedLatest = version.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
+                String normalizedCurrent = currentVersion.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
 
-        registerRecipes();
+                if (isNewerVersion(normalizedLatest, normalizedCurrent)) {
+                    getLogger().info("Neue Version verfügbar: " + version);
+                    getLogger().info("Download: https://www.spigotmc.org/resources/buttoncontrol.127702/");
+                    Bukkit.getScheduler().runTask(this, () -> {
+                        Bukkit.getOnlinePlayers().stream()
+                                .filter(p -> p.hasPermission("buttoncontrol.update"))
+                                .forEach(p -> {
+                                    p.sendMessage("§6[ButtonControl] §eEine neue Version ist verfügbar: §f" + version);
+                                    p.sendMessage("§6[ButtonControl] §eDownload: §fhttps://www.spigotmc.org/resources/buttoncontrol.127702/");
+                                });
+                    });
+                } else {
+                    getLogger().info("Keine neue Version verfügbar.");
+                }
+            });
 
-        // Scheduler zum Prüfen der Tageslichtsensoren alle 10 Sekunden (20 Ticks = 1 Sekunde)
-        getServer().getScheduler().runTaskTimer(this, this::checkDaylightSensors, 0L, 20L * 10);
-    }
+            // Listener für Spieler-Joins
+            getServer().getPluginManager().registerEvents(new Listener() {
+                @EventHandler
+                public void onPlayerJoin(PlayerJoinEvent event) {
+                    Player player = event.getPlayer();
+                    if (!player.hasPermission("buttoncontrol.update")) return;
+                    new UpdateChecker(ButtonControl.this, 127702).getVersion(version -> {
+                        String currentVersion = getDescription().getVersion();
+                        // Normalisierung auch hier!
+                        String normalizedLatest = version.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
+                        String normalizedCurrent = currentVersion.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
+
+                        if (isNewerVersion(normalizedLatest, normalizedCurrent)) {
+                            player.sendMessage("§6[ButtonControl] §eEine neue Version ist verfügbar: §f" + version);
+                            player.sendMessage("§6[ButtonControl] §eDownload: §fhttps://www.spigotmc.org/resources/buttoncontrol.127702/");
+                        }
+                    });
+                }
+            }, this);
+
+            // Restlicher Startcode unverändert
+            updateConfigWithDefaults();
+            getServer().getPluginManager().registerEvents(new ButtonListener(this, configManager, dataManager), this);
+            registerRecipes();
+            getServer().getScheduler().runTaskTimer(this, this::checkDaylightSensors, 0L, 20L * 10);
+            MetricsHandler.startMetrics(this);
+        }
+
+        /** Numerischer Versionsvergleich (SemVer-ähnlich) */
+        private boolean isNewerVersion(String latest, String current) {
+            try {
+                String[] latestParts = latest.split("\\.");
+                String[] currentParts = current.split("\\.");
+                int length = Math.max(latestParts.length, currentParts.length);
+
+                for (int i = 0; i < length; i++) {
+                    int latestPart = (i < latestParts.length) ? Integer.parseInt(latestParts[i]) : 0;
+                    int currentPart = (i < currentParts.length) ? Integer.parseInt(currentParts[i]) : 0;
+                    if (latestPart > currentPart) return true;
+                    if (latestPart < currentPart) return false;
+                }
+                return false; // gleich oder älter
+            } catch (NumberFormatException e) {
+                // Fallback: Falls kein numerischer Vergleich funktioniert
+                return !latest.equalsIgnoreCase(current);
+            }
+        }
+
+
 
     private void updateConfigWithDefaults() {
         // Add default note block sound and double note settings if not present
