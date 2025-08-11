@@ -1,18 +1,39 @@
 tueren-geoeffnet: "§aTüren wurden geöffnet."
 tueren-geschlossen: "§cTüren wurden geschlossen."
+
+gates-geoeffnet: "§aZauntore wurden geöffnet."
+gates-geschlossen: "§cZauntore wurden geschlossen."
+max-gates-erreicht: "§cMaximale Anzahl an Zauntoren erreicht."
+
+fallturen-geoeffnet: "§aFalltüren wurden geöffnet."
+fallturen-geschlossen: "§cFalltüren wurden geschlossen."
+max-fallturen-erreicht: "§cMaximale Anzahl an Falltüren erreicht."
+
 lampen-eingeschaltet: "§aLampen wurden eingeschaltet."
 lampen-ausgeschaltet: "§cLampen wurden ausgeschaltet."
+
 bloecke-umgeschaltet: "§eBlöcke wurden umgeschaltet."
 keine-bloecke-verbunden: "§cKeine Blöcke sind verbunden."
+
 max-tueren-erreicht: "§cMaximale Anzahl an Türen erreicht."
 max-lampen-erreicht: "§cMaximale Anzahl an Lampen erreicht."
 max-notenbloecke-erreicht: "§cMaximale Anzahl an Notenblöcken erreicht."
+
+max-glocken-erreicht: "§cMaximale Anzahl an Glocken erreicht."
+glocke-gelaeutet: "§aGlocke wurde geläutet."
+
 block-verbunden: "§aBlock verbunden."
 block-bereits-verbunden: "§cBlock ist bereits verbunden."
 controller-platziert: "§aController platziert."
 controller-entfernt: "§cController entfernt."
+
 notenblock-ausgeloest: "§aNotenblock-Klingel wurde ausgelöst."
 instrument-gesetzt: "§aDein Notenblock-Instrument wurde auf %s gesetzt."
 ungueltiges-instrument: "§cUngültiges Instrument! Verwende: /bc note <Instrument>"
+
 konfiguration-neugeladen: "§aKonfiguration und Daten erfolgreich neu geladen!"
 keine-berechtigung: "§cDu hast keine Berechtigung für diesen Befehl!"
+
+kolben-ausgefahren: "§6[ButtonControl] §7Kolben wurden ausgefahren."
+kolben-eingefahren: "§6[ButtonControl] §7Kolben wurden eingefahren."
+max-kolben-erreicht: "§6[ButtonControl] §7Maximale Anzahl an Kolben erreicht."
