@@ -32,8 +32,6 @@ public class DataManager {
         data = YamlConfiguration.loadConfiguration(dataFile);
     }
 
-    // --- Spielerbasierte Methoden ---
-
     public List<String> getConnectedBlocks(String playerUUID, String buttonId) {
         return data.getStringList("players." + playerUUID + ".buttons." + buttonId);
     }
@@ -64,8 +62,6 @@ public class DataManager {
         Set<String> keys = data.getConfigurationSection("players." + playerUUID + ".placed-controllers").getKeys(false);
         return new ArrayList<>(keys);
     }
-
-    // --- Neue globale Methoden für Tageslichtsensoren etc. ---
 
     public List<String> getAllPlacedControllers() {
         List<String> allControllers = new ArrayList<>();
@@ -101,8 +97,6 @@ public class DataManager {
         return null;
     }
 
-    // --- Notenblock-Instrument Methoden ---
-
     public void setPlayerInstrument(UUID playerUUID, String instrument) {
         data.set("players." + playerUUID.toString() + ".instrument", instrument);
         saveData();
@@ -110,6 +104,30 @@ public class DataManager {
 
     public String getPlayerInstrument(UUID playerUUID) {
         return data.getString("players." + playerUUID.toString() + ".instrument");
+    }
+
+    // Bewegungsmelder-Einstellungen
+    public void setMotionSensorRadius(String location, double radius) {
+        data.set("motion-sensors." + location + ".radius", radius);
+        saveData();
+    }
+
+    public double getMotionSensorRadius(String location) {
+        return data.getDouble("motion-sensors." + location + ".radius", -1);
+    }
+
+    public void setMotionSensorDelay(String location, long delay) {
+        data.set("motion-sensors." + location + ".delay", delay);
+        saveData();
+    }
+
+    public long getMotionSensorDelay(String location) {
+        return data.getLong("motion-sensors." + location + ".delay", -1);
+    }
+
+    public void removeMotionSensorSettings(String location) {
+        data.set("motion-sensors." + location, null);
+        saveData();
     }
 
     public void saveData() {
