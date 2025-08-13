@@ -26,10 +26,7 @@ public class ConfigManager {
         }
         config = YamlConfiguration.loadConfiguration(configFile);
 
-        // Fehlende Defaults aus der Jar-Version einfügen
         mergeDefaults(config, "config.yml", configFile);
-
-        // bestehende setConfigDefaults (nur für alte Backwards-Kompatibilität)
         setConfigDefaults();
     }
 
@@ -40,16 +37,10 @@ public class ConfigManager {
         }
         lang = YamlConfiguration.loadConfiguration(langFile);
 
-        // Fehlende Defaults aus der Jar-Version einfügen
         mergeDefaults(lang, "lang.yml", langFile);
-
-        // bestehende setLangDefaults
         setLangDefaults();
     }
 
-    /**
-     * Ergänzt fehlende Keys aus der im Jar enthaltenen Datei.
-     */
     private void mergeDefaults(FileConfiguration file, String resourceName, File targetFile) {
         try (InputStream is = plugin.getResource(resourceName);
              InputStreamReader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
@@ -85,11 +76,12 @@ public class ConfigManager {
         if (!config.contains("default-note")) config.set("default-note", "PIANO");
         if (!config.contains("double-note-enabled")) config.set("double-note-enabled", true);
         if (!config.contains("double-note-delay-ms")) config.set("double-note-delay-ms", 1000);
+        if (!config.contains("motion-detection-radius")) config.set("motion-detection-radius", 5.0);
+        if (!config.contains("motion-close-delay-ms")) config.set("motion-close-delay-ms", 5000);
         saveConfig();
     }
 
     private void setLangDefaults() {
-        // Beispiel: nur wenn Key fehlt, setzen – alle Keys wie in deiner Version bleiben hier
         if (!lang.contains("tueren-geoeffnet")) lang.set("tueren-geoeffnet", "§aTüren wurden geöffnet.");
         if (!lang.contains("tueren-geschlossen")) lang.set("tueren-geschlossen", "§cTüren wurden geschlossen.");
         if (!lang.contains("max-tueren-erreicht")) lang.set("max-tueren-erreicht", "§cMaximale Anzahl an Türen erreicht.");
