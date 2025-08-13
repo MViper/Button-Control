@@ -35,100 +35,98 @@ public class ButtonListener implements Listener {
         ItemStack item = event.getItem();
         Block block = event.getClickedBlock();
 
-        // Block wird gesteuert (Button / Tageslichtsensor)
-        if (event.getAction() == Action.RIGHT_CLICK_BLOCK && block != null &&
-                (block.getType() == Material.STONE_BUTTON || block.getType() == Material.DAYLIGHT_DETECTOR)) {
-
+        // Block wird gesteuert (Button, Tageslichtsensor oder Bewegungsmelder)
+        if (event.getAction() == Action.RIGHT_CLICK_BLOCK && block != null) {
             String blockLocation = block.getWorld().getName() + "," + block.getX() + "," + block.getY() + "," + block.getZ();
             String buttonId = dataManager.getButtonIdForPlacedController(playerUUID, blockLocation);
 
             if (buttonId != null) {
                 event.setCancelled(true);
-                List<String> connectedBlocks = dataManager.getConnectedBlocks(playerUUID, buttonId);
-                if (connectedBlocks != null && !connectedBlocks.isEmpty()) {
-                    boolean anyDoorOpened = false;
-                    boolean anyDoorClosed = false;
-                    boolean anyGateOpened = false;
-                    boolean anyGateClosed = false;
-                    boolean anyTrapOpened = false;
-                    boolean anyTrapClosed = false;
-                    boolean anyLampOn = false;
-                    boolean anyLampOff = false;
-                    boolean anyNoteBlockPlayed = false;
-                    boolean anyBellPlayed = false;
-
-                    for (String loc : connectedBlocks) {
-                        String[] parts = loc.split(",");
-                        Location location = new Location(plugin.getServer().getWorld(parts[0]),
-                                Integer.parseInt(parts[1]),
-                                Integer.parseInt(parts[2]),
-                                Integer.parseInt(parts[3]));
-                        Block targetBlock = location.getBlock();
-
-                        // Türen, Gates, Trapdoors
-                        if (isDoor(targetBlock.getType()) || isGate(targetBlock.getType()) || isTrapdoor(targetBlock.getType())) {
-                            if (targetBlock.getBlockData() instanceof Openable) {
-                                Openable openable = (Openable) targetBlock.getBlockData();
-                                boolean wasOpen = openable.isOpen();
-                                openable.setOpen(!wasOpen);
-                                targetBlock.setBlockData(openable);
-
-                                if (isDoor(targetBlock.getType())) {
-                                    if (!wasOpen) anyDoorOpened = true; else anyDoorClosed = true;
-                                } else if (isGate(targetBlock.getType())) {
-                                    if (!wasOpen) anyGateOpened = true; else anyGateClosed = true;
-                                } else if (isTrapdoor(targetBlock.getType())) {
-                                    if (!wasOpen) anyTrapOpened = true; else anyTrapClosed = true;
-                                }
-                            }
-                        }
-                        // Lampen
-                        else if (targetBlock.getType() == Material.REDSTONE_LAMP) {
-                            Lightable lamp = (Lightable) targetBlock.getBlockData();
-                            boolean wasLit = lamp.isLit();
-                            lamp.setLit(!wasLit);
-                            targetBlock.setBlockData(lamp);
-                            if (!wasLit) anyLampOn = true; else anyLampOff = true;
-                        }
-                        // Notenblock
-                        else if (targetBlock.getType() == Material.NOTE_BLOCK) {
-                            String instrument = dataManager.getPlayerInstrument(event.getPlayer().getUniqueId());
-                            if (instrument == null) {
-                                instrument = configManager.getConfig().getString("default-note", "PIANO");
-                            }
-                            plugin.playDoorbellSound(location, instrument);
-                            anyNoteBlockPlayed = true;
-                        }
-                        // Glocke
-                        else if (targetBlock.getType() == Material.BELL) {
-                            targetBlock.getWorld().playSound(location, org.bukkit.Sound.BLOCK_BELL_USE, 3.0f, 1.0f);
-                            anyBellPlayed = true;
-                        }
-                    }
-
-                    // Rückmeldungen (ALLE farbig per lang.yml)
-                    if (anyDoorOpened) event.getPlayer().sendMessage(configManager.getMessage("tueren-geoeffnet"));
-                    if (anyDoorClosed) event.getPlayer().sendMessage(configManager.getMessage("tueren-geschlossen"));
-                    if (anyGateOpened) event.getPlayer().sendMessage(configManager.getMessage("gates-geoeffnet"));
-                    if (anyGateClosed) event.getPlayer().sendMessage(configManager.getMessage("gates-geschlossen"));
-                    if (anyTrapOpened) event.getPlayer().sendMessage(configManager.getMessage("fallturen-geoeffnet"));
-                    if (anyTrapClosed) event.getPlayer().sendMessage(configManager.getMessage("fallturen-geschlossen"));
-                    if (anyLampOn) event.getPlayer().sendMessage(configManager.getMessage("lampen-eingeschaltet"));
-                    if (anyLampOff) event.getPlayer().sendMessage(configManager.getMessage("lampen-ausgeschaltet"));
-                    if (anyNoteBlockPlayed) event.getPlayer().sendMessage(configManager.getMessage("notenblock-ausgeloest"));
-                    if (anyBellPlayed) event.getPlayer().sendMessage(configManager.getMessage("glocke-gelaeutet"));
-
-                } else {
-                    event.getPlayer().sendMessage(configManager.getMessage("keine-bloecke-verbunden"));
+                // Bewegungsmelder: GUI öffnen
+                if (block.getType() == Material.TRIPWIRE_HOOK) {
+                    new MotionSensorGUI(plugin, event.getPlayer(), blockLocation, buttonId).open();
+                    return;
                 }
+                // Button oder Tageslichtsensor: Normale Steuerung
+                if (block.getType() == Material.STONE_BUTTON || block.getType() == Material.DAYLIGHT_DETECTOR) {
+                    List<String> connectedBlocks = dataManager.getConnectedBlocks(playerUUID, buttonId);
+                    if (connectedBlocks != null && !connectedBlocks.isEmpty()) {
+                        boolean anyDoorOpened = false;
+                        boolean anyDoorClosed = false;
+                        boolean anyGateOpened = false;
+                        boolean anyGateClosed = false;
+                        boolean anyTrapOpened = false;
+                        boolean anyTrapClosed = false;
+                        boolean anyLampOn = false;
+                        boolean anyLampOff = false;
+                        boolean anyNoteBlockPlayed = false;
+                        boolean anyBellPlayed = false;
+
+                        for (String loc : connectedBlocks) {
+                            String[] parts = loc.split(",");
+                            Location location = new Location(plugin.getServer().getWorld(parts[0]),
+                                    Integer.parseInt(parts[1]),
+                                    Integer.parseInt(parts[2]),
+                                    Integer.parseInt(parts[3]));
+                            Block targetBlock = location.getBlock();
+
+                            if (isDoor(targetBlock.getType()) || isGate(targetBlock.getType()) || isTrapdoor(targetBlock.getType())) {
+                                if (targetBlock.getBlockData() instanceof Openable) {
+                                    Openable openable = (Openable) targetBlock.getBlockData();
+                                    boolean wasOpen = openable.isOpen();
+                                    openable.setOpen(!wasOpen);
+                                    targetBlock.setBlockData(openable);
+
+                                    if (isDoor(targetBlock.getType())) {
+                                        if (!wasOpen) anyDoorOpened = true; else anyDoorClosed = true;
+                                    } else if (isGate(targetBlock.getType())) {
+                                        if (!wasOpen) anyGateOpened = true; else anyGateClosed = true;
+                                    } else if (isTrapdoor(targetBlock.getType())) {
+                                        if (!wasOpen) anyTrapOpened = true; else anyTrapClosed = true;
+                                    }
+                                }
+                            } else if (targetBlock.getType() == Material.REDSTONE_LAMP) {
+                                Lightable lamp = (Lightable) targetBlock.getBlockData();
+                                boolean wasLit = lamp.isLit();
+                                lamp.setLit(!wasLit);
+                                targetBlock.setBlockData(lamp);
+                                if (!wasLit) anyLampOn = true; else anyLampOff = true;
+                            } else if (targetBlock.getType() == Material.NOTE_BLOCK) {
+                                String instrument = dataManager.getPlayerInstrument(event.getPlayer().getUniqueId());
+                                if (instrument == null) {
+                                    instrument = configManager.getConfig().getString("default-note", "PIANO");
+                                }
+                                plugin.playDoorbellSound(location, instrument);
+                                anyNoteBlockPlayed = true;
+                            } else if (targetBlock.getType() == Material.BELL) {
+                                targetBlock.getWorld().playSound(location, org.bukkit.Sound.BLOCK_BELL_USE, 3.0f, 1.0f);
+                                anyBellPlayed = true;
+                            }
+                        }
+
+                        if (anyDoorOpened) event.getPlayer().sendMessage(configManager.getMessage("tueren-geoeffnet"));
+                        if (anyDoorClosed) event.getPlayer().sendMessage(configManager.getMessage("tueren-geschlossen"));
+                        if (anyGateOpened) event.getPlayer().sendMessage(configManager.getMessage("gates-geoeffnet"));
+                        if (anyGateClosed) event.getPlayer().sendMessage(configManager.getMessage("gates-geschlossen"));
+                        if (anyTrapOpened) event.getPlayer().sendMessage(configManager.getMessage("fallturen-geoeffnet"));
+                        if (anyTrapClosed) event.getPlayer().sendMessage(configManager.getMessage("fallturen-geschlossen"));
+                        if (anyLampOn) event.getPlayer().sendMessage(configManager.getMessage("lampen-eingeschaltet"));
+                        if (anyLampOff) event.getPlayer().sendMessage(configManager.getMessage("lampen-ausgeschaltet"));
+                        if (anyNoteBlockPlayed) event.getPlayer().sendMessage(configManager.getMessage("notenblock-ausgeloest"));
+                        if (anyBellPlayed) event.getPlayer().sendMessage(configManager.getMessage("glocke-gelaeutet"));
+                    } else {
+                        event.getPlayer().sendMessage(configManager.getMessage("keine-bloecke-verbunden"));
+                    }
+                }
+                return;
             }
-            return;
         }
 
         // Verbindung herstellen
         if (item == null || (!item.getType().equals(Material.STONE_BUTTON) &&
-                            !item.getType().equals(Material.DAYLIGHT_DETECTOR) &&
-                            !item.getType().equals(Material.NOTE_BLOCK))) {
+                             !item.getType().equals(Material.DAYLIGHT_DETECTOR) &&
+                             !item.getType().equals(Material.NOTE_BLOCK) &&
+                             !item.getType().equals(Material.TRIPWIRE_HOOK))) {
             return;
         }
 
@@ -211,8 +209,9 @@ public class ButtonListener implements Listener {
         Block block = event.getBlockPlaced();
 
         if (item == null || (!item.getType().equals(Material.STONE_BUTTON) &&
-                            !item.getType().equals(Material.DAYLIGHT_DETECTOR) &&
-                            !item.getType().equals(Material.NOTE_BLOCK))) {
+                             !item.getType().equals(Material.DAYLIGHT_DETECTOR) &&
+                             !item.getType().equals(Material.NOTE_BLOCK) &&
+                             !item.getType().equals(Material.TRIPWIRE_HOOK))) {
             return;
         }
 
@@ -236,6 +235,7 @@ public class ButtonListener implements Listener {
         if (buttonId != null) {
             dataManager.removePlacedController(playerUUID, blockLocation);
             dataManager.setConnectedBlocks(playerUUID, buttonId, null);
+            dataManager.removeMotionSensorSettings(blockLocation); // Entferne Bewegungsmelder-Einstellungen
             event.getPlayer().sendMessage(configManager.getMessage("controller-entfernt"));
         }
     }
