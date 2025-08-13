@@ -1,7 +1,18 @@
+# Maximale Anzahl an steuerbaren Blöcken pro Controller
 max-doors: 20
 max-lamps: 50
-max-bells: 5
 max-noteblocks: 10
-default-note: PIANO
+max-gates: 20
+max-trapdoors: 20
+max-bells: 5
+
+# Standard-Instrument für Notenblöcke
+default-note: "PIANO"
+
+# Doppelter Notenblock-Ton
 double-note-enabled: true
 double-note-delay-ms: 1000
+
+# Bewegungsmelder-Einstellungen
+motion-detection-radius: 5.0
+motion-close-delay-ms: 5000
