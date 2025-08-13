@@ -23,92 +23,87 @@ import org.bukkit.event.player.PlayerJoinEvent;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ButtonControl extends JavaPlugin {
     private ConfigManager configManager;
     private DataManager dataManager;
+    private Map<String, Long> lastMotionDetections = new HashMap<>();
 
     @Override
-        public void onEnable() {
-            configManager = new ConfigManager(this);
-            dataManager = new DataManager(this);
+    public void onEnable() {
+        configManager = new ConfigManager(this);
+        dataManager = new DataManager(this);
 
-            // Spigot Update Checker starten
-            new UpdateChecker(this, 127702).getVersion(version -> {
-                String currentVersion = this.getDescription().getVersion();
+        // Spigot Update Checker starten
+        new UpdateChecker(this, 127702).getVersion(version -> {
+            String currentVersion = this.getDescription().getVersion();
+            String normalizedLatest = version.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
+            String normalizedCurrent = currentVersion.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
 
-                // Normalisiere "version", "v", "v." am Anfang, dann trimmen
-                String normalizedLatest = version.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
-                String normalizedCurrent = currentVersion.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
-
-                if (isNewerVersion(normalizedLatest, normalizedCurrent)) {
-                    getLogger().info("Neue Version verfügbar: " + version);
-                    getLogger().info("Download: https://www.spigotmc.org/resources/buttoncontrol.127702/");
-                    Bukkit.getScheduler().runTask(this, () -> {
-                        Bukkit.getOnlinePlayers().stream()
-                                .filter(p -> p.hasPermission("buttoncontrol.update"))
-                                .forEach(p -> {
-                                    p.sendMessage("§6[ButtonControl] §eEine neue Version ist verfügbar: §f" + version);
-                                    p.sendMessage("§6[ButtonControl] §eDownload: §fhttps://www.spigotmc.org/resources/buttoncontrol.127702/");
-                                });
-                    });
-                } else {
-                    getLogger().info("Keine neue Version verfügbar.");
-                }
-            });
-
-            // Listener für Spieler-Joins
-            getServer().getPluginManager().registerEvents(new Listener() {
-                @EventHandler
-                public void onPlayerJoin(PlayerJoinEvent event) {
-                    Player player = event.getPlayer();
-                    if (!player.hasPermission("buttoncontrol.update")) return;
-                    new UpdateChecker(ButtonControl.this, 127702).getVersion(version -> {
-                        String currentVersion = getDescription().getVersion();
-                        // Normalisierung auch hier!
-                        String normalizedLatest = version.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
-                        String normalizedCurrent = currentVersion.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
-
-                        if (isNewerVersion(normalizedLatest, normalizedCurrent)) {
-                            player.sendMessage("§6[ButtonControl] §eEine neue Version ist verfügbar: §f" + version);
-                            player.sendMessage("§6[ButtonControl] §eDownload: §fhttps://www.spigotmc.org/resources/buttoncontrol.127702/");
-                        }
-                    });
-                }
-            }, this);
-
-            // Restlicher Startcode unverändert
-            updateConfigWithDefaults();
-            getServer().getPluginManager().registerEvents(new ButtonListener(this, configManager, dataManager), this);
-            registerRecipes();
-            getServer().getScheduler().runTaskTimer(this, this::checkDaylightSensors, 0L, 20L * 10);
-            MetricsHandler.startMetrics(this);
-        }
-
-        /** Numerischer Versionsvergleich (SemVer-ähnlich) */
-        private boolean isNewerVersion(String latest, String current) {
-            try {
-                String[] latestParts = latest.split("\\.");
-                String[] currentParts = current.split("\\.");
-                int length = Math.max(latestParts.length, currentParts.length);
-
-                for (int i = 0; i < length; i++) {
-                    int latestPart = (i < latestParts.length) ? Integer.parseInt(latestParts[i]) : 0;
-                    int currentPart = (i < currentParts.length) ? Integer.parseInt(currentParts[i]) : 0;
-                    if (latestPart > currentPart) return true;
-                    if (latestPart < currentPart) return false;
-                }
-                return false; // gleich oder älter
-            } catch (NumberFormatException e) {
-                // Fallback: Falls kein numerischer Vergleich funktioniert
-                return !latest.equalsIgnoreCase(current);
+            if (isNewerVersion(normalizedLatest, normalizedCurrent)) {
+                getLogger().info("Neue Version verfügbar: " + version);
+                getLogger().info("Download: https://www.spigotmc.org/resources/buttoncontrol.127702/");
+                Bukkit.getScheduler().runTask(this, () -> {
+                    Bukkit.getOnlinePlayers().stream()
+                            .filter(p -> p.hasPermission("buttoncontrol.update"))
+                            .forEach(p -> {
+                                p.sendMessage("§6[ButtonControl] §eEine neue Version ist verfügbar: §f" + version);
+                                p.sendMessage("§6[ButtonControl] §eDownload: §fhttps://www.spigotmc.org/resources/buttoncontrol.127702/");
+                            });
+                });
+            } else {
+                getLogger().info("Keine neue Version verfügbar.");
             }
+        });
+
+        // Listener für Spieler-Joins
+        getServer().getPluginManager().registerEvents(new Listener() {
+            @EventHandler
+            public void onPlayerJoin(PlayerJoinEvent event) {
+                Player player = event.getPlayer();
+                if (!player.hasPermission("buttoncontrol.update")) return;
+                new UpdateChecker(ButtonControl.this, 127702).getVersion(version -> {
+                    String currentVersion = getDescription().getVersion();
+                    String normalizedLatest = version.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
+                    String normalizedCurrent = currentVersion.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
+
+                    if (isNewerVersion(normalizedLatest, normalizedCurrent)) {
+                        player.sendMessage("§6[ButtonControl] §eEine neue Version ist verfügbar: §f" + version);
+                        player.sendMessage("§6[ButtonControl] §eDownload: §fhttps://www.spigotmc.org/resources/buttoncontrol.127702/");
+                    }
+                });
+            }
+        }, this);
+
+        updateConfigWithDefaults();
+        getServer().getPluginManager().registerEvents(new ButtonListener(this, configManager, dataManager), this);
+        registerRecipes();
+        getServer().getScheduler().runTaskTimer(this, this::checkDaylightSensors, 0L, 20L * 10);
+        getServer().getScheduler().runTaskTimer(this, this::checkMotionSensors, 0L, 10L);
+        MetricsHandler.startMetrics(this);
+    }
+
+    private boolean isNewerVersion(String latest, String current) {
+        try {
+            String[] latestParts = latest.split("\\.");
+            String[] currentParts = current.split("\\.");
+            int length = Math.max(latestParts.length, currentParts.length);
+
+            for (int i = 0; i < length; i++) {
+                int latestPart = (i < latestParts.length) ? Integer.parseInt(latestParts[i]) : 0;
+                int currentPart = (i < currentParts.length) ? Integer.parseInt(currentParts[i]) : 0;
+                if (latestPart > currentPart) return true;
+                if (latestPart < currentPart) return false;
+            }
+            return false;
+        } catch (NumberFormatException e) {
+            return !latest.equalsIgnoreCase(current);
         }
-
-
+    }
 
     private void updateConfigWithDefaults() {
-        // Add default note block sound and double note settings if not present
         if (!configManager.getConfig().contains("default-note")) {
             configManager.getConfig().set("default-note", "PIANO");
         }
@@ -117,6 +112,12 @@ public class ButtonControl extends JavaPlugin {
         }
         if (!configManager.getConfig().contains("double-note-delay-ms")) {
             configManager.getConfig().set("double-note-delay-ms", 1000);
+        }
+        if (!configManager.getConfig().contains("motion-detection-radius")) {
+            configManager.getConfig().set("motion-detection-radius", 5.0);
+        }
+        if (!configManager.getConfig().contains("motion-close-delay-ms")) {
+            configManager.getConfig().set("motion-close-delay-ms", 5000);
         }
         configManager.saveConfig();
     }
@@ -148,7 +149,6 @@ public class ButtonControl extends JavaPlugin {
         daylightRecipe.setIngredient('8', Material.DAYLIGHT_DETECTOR);
         Bukkit.addRecipe(daylightRecipe);
 
-        // Recipe for Control Note Block
         ItemStack controlNoteBlock = new ItemStack(Material.NOTE_BLOCK);
         ItemMeta noteBlockMeta = controlNoteBlock.getItemMeta();
         noteBlockMeta.setDisplayName("§6Steuer-Notenblock");
@@ -161,6 +161,19 @@ public class ButtonControl extends JavaPlugin {
         noteBlockRecipe.setIngredient('5', Material.NOTE_BLOCK);
         noteBlockRecipe.setIngredient('8', Material.NOTE_BLOCK);
         Bukkit.addRecipe(noteBlockRecipe);
+
+        ItemStack controlMotion = new ItemStack(Material.TRIPWIRE_HOOK);
+        ItemMeta motionMeta = controlMotion.getItemMeta();
+        motionMeta.setDisplayName("§6Steuer-Bewegungsmelder");
+        controlMotion.setItemMeta(motionMeta);
+
+        NamespacedKey motionKey = new NamespacedKey(this, "control_motion");
+        ShapedRecipe motionRecipe = new ShapedRecipe(motionKey, controlMotion);
+        motionRecipe.shape("123", "456", "789");
+        motionRecipe.setIngredient('2', Material.TRIPWIRE_HOOK);
+        motionRecipe.setIngredient('5', Material.TRIPWIRE_HOOK);
+        motionRecipe.setIngredient('8', Material.TRIPWIRE_HOOK);
+        Bukkit.addRecipe(motionRecipe);
     }
 
     public void checkDaylightSensors() {
@@ -212,25 +225,89 @@ public class ButtonControl extends JavaPlugin {
         }
     }
 
-    // Play note block sound for doorbell
+    public void checkMotionSensors() {
+        long now = System.currentTimeMillis();
+        List<String> allControllers = dataManager.getAllPlacedControllers();
+        for (String controllerLoc : allControllers) {
+            String[] parts = controllerLoc.split(",");
+            if (parts.length != 4) continue;
+
+            World world = getServer().getWorld(parts[0]);
+            if (world == null) continue;
+
+            Location loc = new Location(world,
+                    Integer.parseInt(parts[1]),
+                    Integer.parseInt(parts[2]),
+                    Integer.parseInt(parts[3]));
+
+            Block block = loc.getBlock();
+            if (block.getType() != Material.TRIPWIRE_HOOK) continue;
+
+            String buttonId = dataManager.getButtonIdForPlacedController(controllerLoc);
+            if (buttonId == null) continue;
+
+            // Individuelle Einstellungen für diesen Bewegungsmelder
+            double radius = dataManager.getMotionSensorRadius(controllerLoc);
+            if (radius == -1) radius = configManager.getConfig().getDouble("motion-detection-radius", 5.0);
+            long delay = dataManager.getMotionSensorDelay(controllerLoc);
+            if (delay == -1) delay = configManager.getConfig().getLong("motion-close-delay-ms", 5000L);
+
+            boolean detected = !world.getNearbyEntities(loc, radius, radius, radius, e -> e instanceof Player).isEmpty();
+
+            List<String> connectedBlocks = dataManager.getConnectedBlocks(buttonId);
+            if (connectedBlocks == null || connectedBlocks.isEmpty()) continue;
+
+            if (detected) {
+                setOpenables(connectedBlocks, true);
+                lastMotionDetections.put(controllerLoc, now);
+            } else {
+                Long last = lastMotionDetections.get(controllerLoc);
+                if (last != null && now - last >= delay) {
+                    setOpenables(connectedBlocks, false);
+                    lastMotionDetections.remove(controllerLoc);
+                }
+            }
+        }
+    }
+
+    private void setOpenables(List<String> connectedBlocks, boolean open) {
+        for (String targetLocStr : connectedBlocks) {
+            String[] targetParts = targetLocStr.split(",");
+            if (targetParts.length != 4) continue;
+
+            World targetWorld = getServer().getWorld(targetParts[0]);
+            if (targetWorld == null) continue;
+
+            Location targetLoc = new Location(targetWorld,
+                    Integer.parseInt(targetParts[1]),
+                    Integer.parseInt(targetParts[2]),
+                    Integer.parseInt(targetParts[3]));
+
+            Block targetBlock = targetLoc.getBlock();
+
+            if (targetBlock.getBlockData() instanceof org.bukkit.block.data.Openable) {
+                org.bukkit.block.data.Openable openable = (org.bukkit.block.data.Openable) targetBlock.getBlockData();
+                openable.setOpen(open);
+                targetBlock.setBlockData(openable);
+            }
+        }
+    }
+
     public void playDoorbellSound(Location loc, String instrument) {
         Block block = loc.getBlock();
         if (block.getType() != Material.NOTE_BLOCK) return;
 
         NoteBlock noteBlock = (NoteBlock) block.getBlockData();
         try {
-            // Set instrument based on config or player preference
             org.bukkit.Instrument bukkitInstrument = org.bukkit.Instrument.valueOf(instrument.toUpperCase());
             noteBlock.setInstrument(bukkitInstrument);
-            noteBlock.setNote(new Note(0, Tone.C, false)); // Default to C note
+            noteBlock.setNote(new Note(0, Tone.C, false));
             block.setBlockData(noteBlock);
             loc.getWorld().playSound(loc, bukkitInstrument.getSound(), 1.0f, 1.0f);
 
-            // Check if double note is enabled
             if (configManager.getConfig().getBoolean("double-note-enabled", true)) {
-                // Schedule the second note after the configured delay in milliseconds
                 int delayMs = configManager.getConfig().getInt("double-note-delay-ms", 1000);
-                long delayTicks = (long) (delayMs / 50.0); // Convert milliseconds to ticks (1000 ms = 20 ticks)
+                long delayTicks = (long) (delayMs / 50.0);
                 getServer().getScheduler().runTaskLater(this, () -> {
                     if (block.getType() == Material.NOTE_BLOCK) {
                         loc.getWorld().playSound(loc, bukkitInstrument.getSound(), 1.0f, 1.0f);
@@ -266,7 +343,7 @@ public class ButtonControl extends JavaPlugin {
                     return true;
                 }
                 configManager.reloadConfig();
-                updateConfigWithDefaults(); // Ensure new defaults are added without overwriting
+                updateConfigWithDefaults();
                 dataManager.reloadData();
                 sender.sendMessage(configManager.getMessage("konfiguration-reloaded"));
                 return true;
