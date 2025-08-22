@@ -8,6 +8,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -21,6 +22,7 @@ public class MotionSensorGUI implements Listener {
     private final String blockLocation;
     private final String buttonId;
     private final Player player;
+    private final Inventory inv;
 
     public MotionSensorGUI(ButtonControl plugin, Player player, String blockLocation, String buttonId) {
         this.plugin = plugin;
@@ -29,17 +31,25 @@ public class MotionSensorGUI implements Listener {
         this.blockLocation = blockLocation;
         this.buttonId = buttonId;
         this.player = player;
+        this.inv = Bukkit.createInventory(player, 27, "Bewegungsmelder Einstellungen");
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
     public void open() {
-        Inventory inv = Bukkit.createInventory(player, 27, "Bewegungsmelder Einstellungen");
-
         // Aktuelle Werte aus DataManager holen oder Standardwerte aus Config
         double radius = dataManager.getMotionSensorRadius(blockLocation);
         if (radius == -1) radius = configManager.getConfig().getDouble("motion-detection-radius", 5.0);
         long delay = dataManager.getMotionSensorDelay(blockLocation);
         if (delay == -1) delay = configManager.getConfig().getLong("motion-close-delay-ms", 5000L);
+
+        // Füllitems für leere Slots (graue Glasscheiben)
+        ItemStack filler = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
+        ItemMeta fillerMeta = filler.getItemMeta();
+        fillerMeta.setDisplayName(ChatColor.RESET + "");
+        filler.setItemMeta(fillerMeta);
+        for (int i = 0; i < 27; i++) {
+            inv.setItem(i, filler);
+        }
 
         // Items für die GUI
         ItemStack radiusItem = new ItemStack(Material.COMPASS);
@@ -75,17 +85,23 @@ public class MotionSensorGUI implements Listener {
 
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
-        if (!event.getInventory().getHolder().equals(player)) return;
+        if (!event.getInventory().equals(inv) || !event.getWhoClicked().equals(player)) return;
         if (event.getCurrentItem() == null) return;
-        event.setCancelled(true);
 
+        event.setCancelled(true); // Alle Klicks standardmäßig abbrechen
+
+        int slot = event.getRawSlot();
         ItemStack clicked = event.getCurrentItem();
+
+        // Nur Klicks auf Slots 11, 15 und 22 verarbeiten
+        if (slot != 11 && slot != 15 && slot != 22) return;
+
         double radius = dataManager.getMotionSensorRadius(blockLocation);
         if (radius == -1) radius = configManager.getConfig().getDouble("motion-detection-radius", 5.0);
         long delay = dataManager.getMotionSensorDelay(blockLocation);
         if (delay == -1) delay = configManager.getConfig().getLong("motion-close-delay-ms", 5000L);
 
-        if (clicked.getType() == Material.COMPASS) {
+        if (clicked.getType() == Material.COMPASS && slot == 11) {
             if (event.isLeftClick()) {
                 radius = Math.min(radius + 0.5, 20.0); // Max. Radius: 20 Blöcke
             } else if (event.isRightClick()) {
@@ -99,7 +115,8 @@ public class MotionSensorGUI implements Listener {
                     ChatColor.GRAY + "Rechtsklick: -0.5 Blöcke"
             ));
             clicked.setItemMeta(meta);
-        } else if (clicked.getType() == Material.CLOCK) {
+            inv.setItem(11, clicked);
+        } else if (clicked.getType() == Material.CLOCK && slot == 15) {
             if (event.isLeftClick()) {
                 delay = Math.min(delay + 1000, 30000); // Max. Verzögerung: 30 Sekunden
             } else if (event.isRightClick()) {
@@ -113,15 +130,23 @@ public class MotionSensorGUI implements Listener {
                     ChatColor.GRAY + "Rechtsklick: -1 Sekunde"
             ));
             clicked.setItemMeta(meta);
-        } else if (clicked.getType() == Material.EMERALD) {
+            inv.setItem(15, clicked);
+        } else if (clicked.getType() == Material.EMERALD && slot == 22) {
             player.closeInventory();
         }
     }
 
     @EventHandler
+    public void onInventoryDrag(InventoryDragEvent event) {
+        if (!event.getInventory().equals(inv) || !event.getWhoClicked().equals(player)) return;
+        event.setCancelled(true); // Verhindert Drag-and-Drop
+    }
+
+    @EventHandler
     public void onInventoryClose(InventoryCloseEvent event) {
-        if (event.getPlayer().equals(player)) {
+        if (event.getPlayer().equals(player) && event.getInventory().equals(inv)) {
             InventoryClickEvent.getHandlerList().unregister(this);
+            InventoryDragEvent.getHandlerList().unregister(this);
             InventoryCloseEvent.getHandlerList().unregister(this);
         }
     }
