@@ -20,6 +20,8 @@ import org.bukkit.Note.Tone;
 import org.bukkit.event.Listener;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.player.PlayerJoinEvent;
+import java.util.ArrayList;
+import java.util.List;
 
 import java.util.List;
 import java.util.UUID;
@@ -33,56 +35,98 @@ public class ButtonControl extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        // Initialisierung der Manager
         configManager = new ConfigManager(this);
         dataManager = new DataManager(this);
 
-        // Spigot Update Checker starten
-        new UpdateChecker(this, 127702).getVersion(version -> {
-            String currentVersion = this.getDescription().getVersion();
-            String normalizedLatest = version.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
-            String normalizedCurrent = currentVersion.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
+        // Spigot Update Checker beim Serverstart ausführen
+            new UpdateChecker(this, 127702).getVersion(version -> {
+                String currentVersion = this.getDescription().getVersion();
+                String normalizedLatest = version.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
+                String normalizedCurrent = currentVersion.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
 
-            if (isNewerVersion(normalizedLatest, normalizedCurrent)) {
-                getLogger().info("Neue Version verfügbar: " + version);
-                getLogger().info("Download: https://www.spigotmc.org/resources/buttoncontrol.127702/");
-                Bukkit.getScheduler().runTask(this, () -> {
-                    Bukkit.getOnlinePlayers().stream()
-                            .filter(p -> p.hasPermission("buttoncontrol.update"))
-                            .forEach(p -> {
-                                p.sendMessage("§6[ButtonControl] §eEine neue Version ist verfügbar: §f" + version);
-                                p.sendMessage("§6[ButtonControl] §eDownload: §fhttps://www.spigotmc.org/resources/buttoncontrol.127702/");
-                            });
-                });
-            } else {
-                getLogger().info("Keine neue Version verfügbar.");
-            }
-        });
+                if (isNewerVersion(normalizedLatest, normalizedCurrent)) {
+                    // Konsole bleibt sachlich
+                    getLogger().info("Update verfügbar: v" + version);
 
-        // Listener für Spieler-Joins
-        getServer().getPluginManager().registerEvents(new Listener() {
-            @EventHandler
-            public void onPlayerJoin(PlayerJoinEvent event) {
-                Player player = event.getPlayer();
-                if (!player.hasPermission("buttoncontrol.update")) return;
-                new UpdateChecker(ButtonControl.this, 127702).getVersion(version -> {
-                    String currentVersion = getDescription().getVersion();
-                    String normalizedLatest = version.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
-                    String normalizedCurrent = currentVersion.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
+                    // Schicke die stylische Nachricht an Admins
+                    Bukkit.getScheduler().runTask(this, () -> {
+                        Bukkit.getOnlinePlayers().stream()
+                                .filter(p -> p.hasPermission("buttoncontrol.update"))
+                                .forEach(p -> {
+                                    p.sendMessage(""); // Leerzeile für Abstand
+                                    p.sendMessage("§8§m-----------------------------------------");
+                                    p.sendMessage("   §6§lButtonControl §7- §e§lUpdate verfügbar!");
+                                    p.sendMessage("");
+                                    p.sendMessage("   §7Aktuelle Version: §c" + currentVersion);
+                                    p.sendMessage("   §7Neue Version:     §a" + version);
+                                    p.sendMessage("");
+                                    p.sendMessage("   §eDownload hier:");
+                                    p.sendMessage("   §bhttps://www.spigotmc.org/resources/127702/");
+                                    p.sendMessage("§8§m-----------------------------------------");
+                                    p.sendMessage("");
+                                });
+                    });
+                } else {
+                    getLogger().info("ButtonControl ist auf dem neuesten Stand (v" + currentVersion + ").");
+                }
+            });
 
-                    if (isNewerVersion(normalizedLatest, normalizedCurrent)) {
-                        player.sendMessage("§6[ButtonControl] §eEine neue Version ist verfügbar: §f" + version);
-                        player.sendMessage("§6[ButtonControl] §eDownload: §fhttps://www.spigotmc.org/resources/buttoncontrol.127702/");
-                    }
-                });
-            }
-        }, this);
+        // Listener für Spieler-Joins (Update-Benachrichtigung beim Betreten des Servers)
+            getServer().getPluginManager().registerEvents(new org.bukkit.event.Listener() {
+                @org.bukkit.event.EventHandler
+                public void onPlayerJoin(org.bukkit.event.player.PlayerJoinEvent event) {
+                    Player player = event.getPlayer();
+                    if (!player.hasPermission("buttoncontrol.update")) return;
+                    
+                    new UpdateChecker(ButtonControl.this, 127702).getVersion(version -> {
+                        String currentVersion = getDescription().getVersion();
+                        String normalizedLatest = version.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
+                        String normalizedCurrent = currentVersion.replaceFirst("(?i)^(version\\s*|v\\.?\\s*)", "").trim();
 
-        updateConfigWithDefaults();
+                        if (isNewerVersion(normalizedLatest, normalizedCurrent)) {
+                            // Stylische Box für den Spieler beim Joinen
+                            player.sendMessage(""); 
+                            player.sendMessage("§8§m-----------------------------------------");
+                            player.sendMessage("   §6§lButtonControl §7- §e§lUpdate verfügbar!");
+                            player.sendMessage("");
+                            player.sendMessage("   §7Aktuelle Version: §c" + currentVersion);
+                            player.sendMessage("   §7Neue Version:     §a" + version);
+                            player.sendMessage("");
+                            player.sendMessage("   §eDownload hier:");
+                            player.sendMessage("   §bhttps://www.spigotmc.org/resources/127702/");
+                            player.sendMessage("§8§m-----------------------------------------");
+                            player.sendMessage("");
+                        }
+                    });
+                }
+            }, this);
+
+            // Konfiguration und Spielmechaniken laden
+            updateConfigWithDefaults();
+        
+        // --- COMMANDS & TAB-COMPLETER ---
+        // Registriert den Executor (Befehlsverarbeitung) und den TabCompleter (Vorschläge)
+        if (getCommand("bc") != null) {
+            getCommand("bc").setExecutor(this); // 'this' setzt voraus, dass ButtonControl 'onCommand' enthält
+            getCommand("bc").setTabCompleter(new ButtonTabCompleter());
+        }
+
+        // Event-Listener registrieren
         getServer().getPluginManager().registerEvents(new ButtonListener(this, configManager, dataManager), this);
+        
+        // Rezepte und bStats/Metrics
         registerRecipes();
-        getServer().getScheduler().runTaskTimer(this, this::checkDaylightSensors, 0L, 20L * 10);
-        getServer().getScheduler().runTaskTimer(this, this::checkMotionSensors, 0L, 10L);
         MetricsHandler.startMetrics(this);
+        
+        // --- AUTOMATISIERUNG-TIMER ---
+        // Daylight Sensoren: Prüfung alle 200 Ticks (10 Sekunden)
+        getServer().getScheduler().runTaskTimer(this, this::checkDaylightSensors, 0L, 20L * 10);
+        
+        // Bewegungsmelder (Motion Sensors): Prüfung alle 10 Ticks (0.5 Sekunden) für flüssige Erkennung
+        getServer().getScheduler().runTaskTimer(this, this::checkMotionSensors, 0L, 10L);
+
+        getLogger().info("ButtonControl v" + getDescription().getVersion() + " wurde erfolgreich aktiviert!");
     }
 
     private boolean isNewerVersion(String latest, String current) {
@@ -123,58 +167,83 @@ public class ButtonControl extends JavaPlugin {
     }
 
     private void registerRecipes() {
-        ItemStack controlButton = new ItemStack(Material.STONE_BUTTON);
-        ItemMeta buttonMeta = controlButton.getItemMeta();
-        buttonMeta.setDisplayName("§6Steuer-Button");
-        controlButton.setItemMeta(buttonMeta);
+    // --- 1. Dynamische Steuer-Buttons für JEDE Holz/Stein-Art ---
+    for (Material mat : Material.values()) {
+        if (mat.name().endsWith("_BUTTON")) {
+            // Wir erstellen für jeden Button-Typ ein eigenes Ergebnis
+            ItemStack controlButton = new ItemStack(mat);
+            ItemMeta buttonMeta = controlButton.getItemMeta();
+            if (buttonMeta != null) {
+                buttonMeta.setDisplayName("§6Steuer-Button");
+                List<String> lore = new ArrayList<>();
+                lore.add("§7Ein universeller Controller für");
+                lore.add("§7Türen, Lampen und mehr.");
+                buttonMeta.setLore(lore);
+                controlButton.setItemMeta(buttonMeta);
+            }
 
-        NamespacedKey buttonKey = new NamespacedKey(this, "control_button");
-        ShapedRecipe buttonRecipe = new ShapedRecipe(buttonKey, controlButton);
-        buttonRecipe.shape("123", "456", "789");
-        buttonRecipe.setIngredient('2', Material.STONE_BUTTON);
-        buttonRecipe.setIngredient('5', Material.STONE_BUTTON);
-        buttonRecipe.setIngredient('8', Material.STONE_BUTTON);
-        Bukkit.addRecipe(buttonRecipe);
+            // Wir brauchen für jedes Material einen eindeutigen Key (z.B. control_button_oak_button)
+            NamespacedKey key = new NamespacedKey(this, "control_" + mat.name().toLowerCase());
+            if (Bukkit.getRecipe(key) != null) Bukkit.removeRecipe(key);
 
-        ItemStack controlDaylight = new ItemStack(Material.DAYLIGHT_DETECTOR);
-        ItemMeta daylightMeta = controlDaylight.getItemMeta();
+            ShapedRecipe recipe = new ShapedRecipe(key, controlButton);
+            recipe.shape("123", "456", "789");
+            // Das Material muss an allen drei Stellen gleich sein (z.B. 3x Eiche)
+            recipe.setIngredient('2', mat);
+            recipe.setIngredient('5', mat);
+            recipe.setIngredient('8', mat);
+            Bukkit.addRecipe(recipe);
+        }
+    }
+
+    // --- 2. Steuer-Tageslichtsensor Rezept ---
+    ItemStack controlDaylight = new ItemStack(Material.DAYLIGHT_DETECTOR);
+    ItemMeta daylightMeta = controlDaylight.getItemMeta();
+    if (daylightMeta != null) {
         daylightMeta.setDisplayName("§6Steuer-Tageslichtsensor");
         controlDaylight.setItemMeta(daylightMeta);
+    }
+    NamespacedKey daylightKey = new NamespacedKey(this, "control_daylight");
+    if (Bukkit.getRecipe(daylightKey) != null) Bukkit.removeRecipe(daylightKey);
+    ShapedRecipe daylightRecipe = new ShapedRecipe(daylightKey, controlDaylight);
+    daylightRecipe.shape("123", "456", "789");
+    daylightRecipe.setIngredient('2', Material.DAYLIGHT_DETECTOR);
+    daylightRecipe.setIngredient('5', Material.DAYLIGHT_DETECTOR);
+    daylightRecipe.setIngredient('8', Material.DAYLIGHT_DETECTOR);
+    Bukkit.addRecipe(daylightRecipe);
 
-        NamespacedKey daylightKey = new NamespacedKey(this, "control_daylight");
-        ShapedRecipe daylightRecipe = new ShapedRecipe(daylightKey, controlDaylight);
-        daylightRecipe.shape("123", "456", "789");
-        daylightRecipe.setIngredient('2', Material.DAYLIGHT_DETECTOR);
-        daylightRecipe.setIngredient('5', Material.DAYLIGHT_DETECTOR);
-        daylightRecipe.setIngredient('8', Material.DAYLIGHT_DETECTOR);
-        Bukkit.addRecipe(daylightRecipe);
-
-        ItemStack controlNoteBlock = new ItemStack(Material.NOTE_BLOCK);
-        ItemMeta noteBlockMeta = controlNoteBlock.getItemMeta();
+    // --- 3. Steuer-Notenblock Rezept ---
+    ItemStack controlNoteBlock = new ItemStack(Material.NOTE_BLOCK);
+    ItemMeta noteBlockMeta = controlNoteBlock.getItemMeta();
+    if (noteBlockMeta != null) {
         noteBlockMeta.setDisplayName("§6Steuer-Notenblock");
         controlNoteBlock.setItemMeta(noteBlockMeta);
+    }
+    NamespacedKey noteBlockKey = new NamespacedKey(this, "control_noteblock");
+    if (Bukkit.getRecipe(noteBlockKey) != null) Bukkit.removeRecipe(noteBlockKey);
+    ShapedRecipe noteBlockRecipe = new ShapedRecipe(noteBlockKey, controlNoteBlock);
+    noteBlockRecipe.shape("123", "456", "789");
+    noteBlockRecipe.setIngredient('2', Material.NOTE_BLOCK);
+    noteBlockRecipe.setIngredient('5', Material.NOTE_BLOCK);
+    noteBlockRecipe.setIngredient('8', Material.NOTE_BLOCK);
+    Bukkit.addRecipe(noteBlockRecipe);
 
-        NamespacedKey noteBlockKey = new NamespacedKey(this, "control_noteblock");
-        ShapedRecipe noteBlockRecipe = new ShapedRecipe(noteBlockKey, controlNoteBlock);
-        noteBlockRecipe.shape("123", "456", "789");
-        noteBlockRecipe.setIngredient('2', Material.NOTE_BLOCK);
-        noteBlockRecipe.setIngredient('5', Material.NOTE_BLOCK);
-        noteBlockRecipe.setIngredient('8', Material.NOTE_BLOCK);
-        Bukkit.addRecipe(noteBlockRecipe);
-
-        ItemStack controlMotion = new ItemStack(Material.TRIPWIRE_HOOK);
-        ItemMeta motionMeta = controlMotion.getItemMeta();
+    // --- 4. Steuer-Bewegungsmelder Rezept ---
+    ItemStack controlMotion = new ItemStack(Material.TRIPWIRE_HOOK);
+    ItemMeta motionMeta = controlMotion.getItemMeta();
+    if (motionMeta != null) {
         motionMeta.setDisplayName("§6Steuer-Bewegungsmelder");
         controlMotion.setItemMeta(motionMeta);
-
-        NamespacedKey motionKey = new NamespacedKey(this, "control_motion");
-        ShapedRecipe motionRecipe = new ShapedRecipe(motionKey, controlMotion);
-        motionRecipe.shape("123", "456", "789");
-        motionRecipe.setIngredient('2', Material.TRIPWIRE_HOOK);
-        motionRecipe.setIngredient('5', Material.TRIPWIRE_HOOK);
-        motionRecipe.setIngredient('8', Material.TRIPWIRE_HOOK);
-        Bukkit.addRecipe(motionRecipe);
     }
+    NamespacedKey motionKey = new NamespacedKey(this, "control_motion");
+    if (Bukkit.getRecipe(motionKey) != null) Bukkit.removeRecipe(motionKey);
+    ShapedRecipe motionRecipe = new ShapedRecipe(motionKey, controlMotion);
+    motionRecipe.shape("123", "456", "789");
+    motionRecipe.setIngredient('2', Material.TRIPWIRE_HOOK);
+    motionRecipe.setIngredient('5', Material.TRIPWIRE_HOOK);
+    motionRecipe.setIngredient('8', Material.TRIPWIRE_HOOK);
+    Bukkit.addRecipe(motionRecipe);
+}
 
     public void checkDaylightSensors() {
         List<String> allControllers = dataManager.getAllPlacedControllers();
@@ -182,16 +251,8 @@ public class ButtonControl extends JavaPlugin {
             String buttonId = dataManager.getButtonIdForPlacedController(controllerLoc);
             if (buttonId == null) continue;
 
-            String[] parts = controllerLoc.split(",");
-            if (parts.length != 4) continue;
-
-            World world = getServer().getWorld(parts[0]);
-            if (world == null) continue;
-
-            Location loc = new Location(world,
-                    Integer.parseInt(parts[1]),
-                    Integer.parseInt(parts[2]),
-                    Integer.parseInt(parts[3]));
+            Location loc = parseLocation(controllerLoc);
+            if (loc == null) continue;
 
             Block block = loc.getBlock();
             if (block.getType() != Material.DAYLIGHT_DETECTOR) continue;
@@ -203,19 +264,10 @@ public class ButtonControl extends JavaPlugin {
             if (connectedBlocks == null) continue;
 
             for (String targetLocStr : connectedBlocks) {
-                String[] targetParts = targetLocStr.split(",");
-                if (targetParts.length != 4) continue;
-
-                World targetWorld = getServer().getWorld(targetParts[0]);
-                if (targetWorld == null) continue;
-
-                Location targetLoc = new Location(targetWorld,
-                        Integer.parseInt(targetParts[1]),
-                        Integer.parseInt(targetParts[2]),
-                        Integer.parseInt(targetParts[3]));
+                Location targetLoc = parseLocation(targetLocStr);
+                if (targetLoc == null) continue;
 
                 Block targetBlock = targetLoc.getBlock();
-
                 if (targetBlock.getType() == Material.REDSTONE_LAMP) {
                     Lightable lamp = (Lightable) targetBlock.getBlockData();
                     lamp.setLit(!isDay);
@@ -229,16 +281,8 @@ public class ButtonControl extends JavaPlugin {
         long now = System.currentTimeMillis();
         List<String> allControllers = dataManager.getAllPlacedControllers();
         for (String controllerLoc : allControllers) {
-            String[] parts = controllerLoc.split(",");
-            if (parts.length != 4) continue;
-
-            World world = getServer().getWorld(parts[0]);
-            if (world == null) continue;
-
-            Location loc = new Location(world,
-                    Integer.parseInt(parts[1]),
-                    Integer.parseInt(parts[2]),
-                    Integer.parseInt(parts[3]));
+            Location loc = parseLocation(controllerLoc);
+            if (loc == null) continue;
 
             Block block = loc.getBlock();
             if (block.getType() != Material.TRIPWIRE_HOOK) continue;
@@ -246,15 +290,15 @@ public class ButtonControl extends JavaPlugin {
             String buttonId = dataManager.getButtonIdForPlacedController(controllerLoc);
             if (buttonId == null) continue;
 
-            // Individuelle Einstellungen für diesen Bewegungsmelder
             double radius = dataManager.getMotionSensorRadius(controllerLoc);
             if (radius == -1) radius = configManager.getConfig().getDouble("motion-detection-radius", 5.0);
+            
             long delay = dataManager.getMotionSensorDelay(controllerLoc);
             if (delay == -1) delay = configManager.getConfig().getLong("motion-close-delay-ms", 5000L);
 
-            boolean detected = !world.getNearbyEntities(loc, radius, radius, radius, e -> e instanceof Player).isEmpty();
-
+            boolean detected = !loc.getWorld().getNearbyEntities(loc, radius, radius, radius, e -> e instanceof Player).isEmpty();
             List<String> connectedBlocks = dataManager.getConnectedBlocks(buttonId);
+            
             if (connectedBlocks == null || connectedBlocks.isEmpty()) continue;
 
             if (detected) {
@@ -272,24 +316,27 @@ public class ButtonControl extends JavaPlugin {
 
     private void setOpenables(List<String> connectedBlocks, boolean open) {
         for (String targetLocStr : connectedBlocks) {
-            String[] targetParts = targetLocStr.split(",");
-            if (targetParts.length != 4) continue;
-
-            World targetWorld = getServer().getWorld(targetParts[0]);
-            if (targetWorld == null) continue;
-
-            Location targetLoc = new Location(targetWorld,
-                    Integer.parseInt(targetParts[1]),
-                    Integer.parseInt(targetParts[2]),
-                    Integer.parseInt(targetParts[3]));
+            Location targetLoc = parseLocation(targetLocStr);
+            if (targetLoc == null) continue;
 
             Block targetBlock = targetLoc.getBlock();
-
             if (targetBlock.getBlockData() instanceof org.bukkit.block.data.Openable) {
                 org.bukkit.block.data.Openable openable = (org.bukkit.block.data.Openable) targetBlock.getBlockData();
                 openable.setOpen(open);
                 targetBlock.setBlockData(openable);
             }
+        }
+    }
+
+    private Location parseLocation(String locStr) {
+        String[] parts = locStr.split(",");
+        if (parts.length != 4) return null;
+        World world = getServer().getWorld(parts[0]);
+        if (world == null) return null;
+        try {
+            return new Location(world, Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), Integer.parseInt(parts[3]));
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
@@ -321,58 +368,116 @@ public class ButtonControl extends JavaPlugin {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (command.getName().equalsIgnoreCase("bc")) {
-            if (args.length == 0) {
-                sender.sendMessage("§6[ButtonControl] §7Verwende: /bc <info|reload|note>");
+        if (!command.getName().equalsIgnoreCase("bc")) return false;
+        
+        if (args.length == 0) {
+            sender.sendMessage("§6[ButtonControl] §7Verwende: /bc <info|reload|note|trust|untrust|public|private>");
+            return true;
+        }
+
+        // --- INFO BEFEHL ---
+        if (args[0].equalsIgnoreCase("info")) {
+            sender.sendMessage("§6§lButtonControl §7- v" + getDescription().getVersion());
+            sender.sendMessage("§eAuthor: §fM_Viper");
+            sender.sendMessage("§eFeatures: §fTüren, Lampen, Notenblöcke, Sensoren");
+            return true;
+        }
+
+        // --- RELOAD BEFEHL ---
+        if (args[0].equalsIgnoreCase("reload")) {
+            if (!sender.hasPermission("buttoncontrol.reload")) {
+                sender.sendMessage(configManager.getMessage("keine-berechtigung"));
                 return true;
             }
+            configManager.reloadConfig();
+            updateConfigWithDefaults();
+            dataManager.reloadData();
+            sender.sendMessage(configManager.getMessage("konfiguration-neugeladen"));
+            return true;
+        }
 
-            if (args[0].equalsIgnoreCase("info")) {
-                sender.sendMessage("§6[ButtonControl] §7Informationen zum Plugin:");
-                sender.sendMessage("§eVersion: §f" + getDescription().getVersion());
-                sender.sendMessage("§eErsteller: §fM_Viper");
-                sender.sendMessage("§ePlugin: §fButtonControl");
-                sender.sendMessage("§eGetestet für Minecraft: §f1.21.5 - 1.21.8");
-                sender.sendMessage("§eWeitere Infos: §fTüren, Lampen & Notenblöcke mit Buttons oder Tageslichtsensoren steuern");
+        // --- NOTE BEFEHL ---
+        if (args[0].equalsIgnoreCase("note") && sender instanceof Player) {
+            Player player = (Player) sender;
+            if (args.length < 2) {
+                player.sendMessage("§6[ButtonControl] §7Verwende: /bc note <Instrument>");
                 return true;
             }
-
-            if (args[0].equalsIgnoreCase("reload")) {
-                if (!sender.hasPermission("buttoncontrol.reload")) {
-                    sender.sendMessage(configManager.getMessage("keine-berechtigung"));
-                    return true;
-                }
-                configManager.reloadConfig();
-                updateConfigWithDefaults();
-                dataManager.reloadData();
-                sender.sendMessage(configManager.getMessage("konfiguration-reloaded"));
-                return true;
+            try {
+                org.bukkit.Instrument.valueOf(args[1].toUpperCase());
+                dataManager.setPlayerInstrument(player.getUniqueId(), args[1].toUpperCase());
+                player.sendMessage(String.format(configManager.getMessage("instrument-gesetzt"), args[1].toUpperCase()));
+            } catch (Exception e) {
+                player.sendMessage(configManager.getMessage("ungueltiges-instrument"));
             }
+            return true;
+        }
 
-            if (args[0].equalsIgnoreCase("note") && sender instanceof Player) {
-                Player player = (Player) sender;
-                if (!player.hasPermission("buttoncontrol.note")) {
-                    player.sendMessage(configManager.getMessage("keine-berechtigung"));
+        // --- TRUST / PUBLIC / PRIVATE SYSTEM ---
+        if (sender instanceof Player) {
+            Player player = (Player) sender;
+            if (args[0].equalsIgnoreCase("trust") || args[0].equalsIgnoreCase("untrust") || 
+                args[0].equalsIgnoreCase("public") || args[0].equalsIgnoreCase("private")) {
+                
+                Block target = player.getTargetBlockExact(5);
+                
+                // Erkennt nun Stein- und alle Holzbuttons sowie Sensoren
+                if (target == null || (!target.getType().name().endsWith("_BUTTON") && 
+                    target.getType() != Material.DAYLIGHT_DETECTOR && 
+                    target.getType() != Material.TRIPWIRE_HOOK)) {
+                    
+                    player.sendMessage(configManager.getMessage("kein-controller-im-blick"));
                     return true;
                 }
-                if (args.length < 2) {
-                    sender.sendMessage("§6[ButtonControl] §7Verwende: /bc note <Instrument>");
-                    sender.sendMessage("§7Verfügbare Instrumente: PIANO, BASS_DRUM, SNARE, STICKS, BASS_GUITAR, FLUTE, BELL, GUITAR, CHIME, XYLOPHONE, etc.");
+
+                String targetLoc = target.getWorld().getName() + "," + target.getX() + "," + target.getY() + "," + target.getZ();
+                String buttonId = dataManager.getButtonIdForLocation(targetLoc);
+
+                if (buttonId == null) {
+                    player.sendMessage(configManager.getMessage("keine-bloecke-verbunden"));
                     return true;
                 }
 
-                String instrument = args[1].toUpperCase();
-                try {
-                    org.bukkit.Instrument.valueOf(instrument);
-                    dataManager.setPlayerInstrument(player.getUniqueId(), instrument);
-                    sender.sendMessage(String.format(configManager.getMessage("instrument-gesetzt"), instrument));
-                } catch (IllegalArgumentException e) {
-                    sender.sendMessage(configManager.getMessage("ungueltiges-instrument"));
+                if (!dataManager.isOwner(buttonId, player.getUniqueId())) {
+                    player.sendMessage(configManager.getMessage("nur-besitzer-abbauen"));
+                    return true;
+                }
+
+                // Spieler hinzufügen
+                if (args[0].equalsIgnoreCase("trust")) {
+                    if (args.length < 2) {
+                        player.sendMessage("§6[ButtonControl] §7Verwende: /bc trust <Spieler>");
+                        return true;
+                    }
+                    Player targetPlayer = Bukkit.getPlayer(args[1]);
+                    if (targetPlayer == null) {
+                        player.sendMessage(configManager.getMessage("spieler-nicht-gefunden"));
+                        return true;
+                    }
+                    dataManager.addTrustedPlayer(buttonId, targetPlayer.getUniqueId());
+                    player.sendMessage(String.format(configManager.getMessage("trust-hinzugefuegt"), targetPlayer.getName()));
+                } 
+                // Spieler entfernen
+                else if (args[0].equalsIgnoreCase("untrust")) {
+                    if (args.length < 2) {
+                        player.sendMessage("§6[ButtonControl] §7Verwende: /bc untrust <Spieler>");
+                        return true;
+                    }
+                    UUID targetUUID = Bukkit.getOfflinePlayer(args[1]).getUniqueId();
+                    dataManager.removeTrustedPlayer(buttonId, targetUUID);
+                    player.sendMessage(String.format(configManager.getMessage("trust-entfernt"), args[1]));
+                } 
+                // Status umschalten (Public) oder erzwingen (Private)
+                else if (args[0].equalsIgnoreCase("public") || args[0].equalsIgnoreCase("private")) {
+                    boolean newState = args[0].equalsIgnoreCase("public") ? !dataManager.isPublic(buttonId) : false;
+                    dataManager.setPublic(buttonId, newState);
+                    String statusColor = newState ? "§aÖffentlich" : "§cPrivat";
+                    player.sendMessage(String.format(configManager.getMessage("status-geandert"), statusColor));
                 }
                 return true;
             }
         }
-        return false;
+        return true;
     }
 
     public ConfigManager getConfigManager() {

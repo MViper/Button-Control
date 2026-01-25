@@ -1,10 +1,12 @@
 package viper;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.Openable;
 import org.bukkit.block.data.Lightable;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
@@ -31,106 +33,44 @@ public class ButtonListener implements Listener {
 
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
-        String playerUUID = event.getPlayer().getUniqueId().toString();
+        Player player = event.getPlayer();
+        UUID playerUUID = player.getUniqueId();
         ItemStack item = event.getItem();
         Block block = event.getClickedBlock();
 
-        // Block wird gesteuert (Button, Tageslichtsensor oder Bewegungsmelder)
+        // 1. Logik für bereits platzierte Controller (Benutzung)
         if (event.getAction() == Action.RIGHT_CLICK_BLOCK && block != null) {
             String blockLocation = block.getWorld().getName() + "," + block.getX() + "," + block.getY() + "," + block.getZ();
-            String buttonId = dataManager.getButtonIdForPlacedController(playerUUID, blockLocation);
+            String buttonId = dataManager.getButtonIdForLocation(blockLocation);
 
             if (buttonId != null) {
-                event.setCancelled(true);
-                // Bewegungsmelder: GUI öffnen
-                if (block.getType() == Material.TRIPWIRE_HOOK) {
-                    new MotionSensorGUI(plugin, event.getPlayer(), blockLocation, buttonId).open();
+                if (!dataManager.canAccess(buttonId, playerUUID)) {
+                    player.sendMessage(configManager.getMessage("keine-berechtigung-controller"));
+                    event.setCancelled(true);
                     return;
                 }
-                // Button oder Tageslichtsensor: Normale Steuerung
-                if (block.getType() == Material.STONE_BUTTON || block.getType() == Material.DAYLIGHT_DETECTOR) {
-                    List<String> connectedBlocks = dataManager.getConnectedBlocks(playerUUID, buttonId);
+
+                if (block.getType() == Material.TRIPWIRE_HOOK) {
+                    event.setCancelled(true);
+                    new MotionSensorGUI(plugin, player, blockLocation, buttonId).open();
+                    return;
+                }
+
+                if (isButton(block.getType()) || block.getType() == Material.DAYLIGHT_DETECTOR) {
+                    List<String> connectedBlocks = dataManager.getConnectedBlocks(buttonId);
+                    
                     if (connectedBlocks != null && !connectedBlocks.isEmpty()) {
-                        boolean anyDoorOpened = false;
-                        boolean anyDoorClosed = false;
-                        boolean anyGateOpened = false;
-                        boolean anyGateClosed = false;
-                        boolean anyTrapOpened = false;
-                        boolean anyTrapClosed = false;
-                        boolean anyLampOn = false;
-                        boolean anyLampOff = false;
-                        boolean anyNoteBlockPlayed = false;
-                        boolean anyBellPlayed = false;
-
-                        for (String loc : connectedBlocks) {
-                            String[] parts = loc.split(",");
-                            Location location = new Location(plugin.getServer().getWorld(parts[0]),
-                                    Integer.parseInt(parts[1]),
-                                    Integer.parseInt(parts[2]),
-                                    Integer.parseInt(parts[3]));
-                            Block targetBlock = location.getBlock();
-
-                            if (isDoor(targetBlock.getType()) || isGate(targetBlock.getType()) || isTrapdoor(targetBlock.getType())) {
-                                if (targetBlock.getBlockData() instanceof Openable) {
-                                    Openable openable = (Openable) targetBlock.getBlockData();
-                                    boolean wasOpen = openable.isOpen();
-                                    openable.setOpen(!wasOpen);
-                                    targetBlock.setBlockData(openable);
-
-                                    if (isDoor(targetBlock.getType())) {
-                                        if (!wasOpen) anyDoorOpened = true; else anyDoorClosed = true;
-                                    } else if (isGate(targetBlock.getType())) {
-                                        if (!wasOpen) anyGateOpened = true; else anyGateClosed = true;
-                                    } else if (isTrapdoor(targetBlock.getType())) {
-                                        if (!wasOpen) anyTrapOpened = true; else anyTrapClosed = true;
-                                    }
-                                }
-                            } else if (targetBlock.getType() == Material.REDSTONE_LAMP) {
-                                Lightable lamp = (Lightable) targetBlock.getBlockData();
-                                boolean wasLit = lamp.isLit();
-                                lamp.setLit(!wasLit);
-                                targetBlock.setBlockData(lamp);
-                                if (!wasLit) anyLampOn = true; else anyLampOff = true;
-                            } else if (targetBlock.getType() == Material.NOTE_BLOCK) {
-                                String instrument = dataManager.getPlayerInstrument(event.getPlayer().getUniqueId());
-                                if (instrument == null) {
-                                    instrument = configManager.getConfig().getString("default-note", "PIANO");
-                                }
-                                plugin.playDoorbellSound(location, instrument);
-                                anyNoteBlockPlayed = true;
-                            } else if (targetBlock.getType() == Material.BELL) {
-                                targetBlock.getWorld().playSound(location, org.bukkit.Sound.BLOCK_BELL_USE, 3.0f, 1.0f);
-                                anyBellPlayed = true;
-                            }
-                        }
-
-                        if (anyDoorOpened) event.getPlayer().sendMessage(configManager.getMessage("tueren-geoeffnet"));
-                        if (anyDoorClosed) event.getPlayer().sendMessage(configManager.getMessage("tueren-geschlossen"));
-                        if (anyGateOpened) event.getPlayer().sendMessage(configManager.getMessage("gates-geoeffnet"));
-                        if (anyGateClosed) event.getPlayer().sendMessage(configManager.getMessage("gates-geschlossen"));
-                        if (anyTrapOpened) event.getPlayer().sendMessage(configManager.getMessage("fallturen-geoeffnet"));
-                        if (anyTrapClosed) event.getPlayer().sendMessage(configManager.getMessage("fallturen-geschlossen"));
-                        if (anyLampOn) event.getPlayer().sendMessage(configManager.getMessage("lampen-eingeschaltet"));
-                        if (anyLampOff) event.getPlayer().sendMessage(configManager.getMessage("lampen-ausgeschaltet"));
-                        if (anyNoteBlockPlayed) event.getPlayer().sendMessage(configManager.getMessage("notenblock-ausgeloest"));
-                        if (anyBellPlayed) event.getPlayer().sendMessage(configManager.getMessage("glocke-gelaeutet"));
+                        toggleConnectedBlocks(player, playerUUID, connectedBlocks);
                     } else {
-                        event.getPlayer().sendMessage(configManager.getMessage("keine-bloecke-verbunden"));
+                        player.sendMessage(configManager.getMessage("keine-bloecke-verbunden"));
                     }
                 }
                 return;
             }
         }
 
-        // Verbindung herstellen
-        if (item == null || (!item.getType().equals(Material.STONE_BUTTON) &&
-                             !item.getType().equals(Material.DAYLIGHT_DETECTOR) &&
-                             !item.getType().equals(Material.NOTE_BLOCK) &&
-                             !item.getType().equals(Material.TRIPWIRE_HOOK))) {
-            return;
-        }
-
-        if (!item.hasItemMeta() || !item.getItemMeta().getDisplayName().contains("§6Steuer-")) {
+        // 2. Logik für das Verbinden von neuen Blöcken (Item in der Hand)
+        if (item == null || !item.hasItemMeta() || !item.getItemMeta().getDisplayName().contains("§6Steuer-")) {
             return;
         }
 
@@ -138,139 +78,218 @@ public class ButtonListener implements Listener {
             return;
         }
 
-        if (isDoor(block.getType()) || isGate(block.getType()) || isTrapdoor(block.getType()) ||
-            block.getType() == Material.REDSTONE_LAMP ||
-            block.getType() == Material.NOTE_BLOCK ||
-            block.getType() == Material.BELL) {
-
+        if (isInteractableTarget(block.getType())) {
             event.setCancelled(true);
 
-            String buttonId = item.getItemMeta().hasLore() ? item.getItemMeta().getLore().get(0) : UUID.randomUUID().toString();
-            List<String> connectedBlocks = dataManager.getConnectedBlocks(playerUUID, buttonId);
+            ItemMeta meta = item.getItemMeta();
+            String buttonId = null;
+
+            // ID aus der Lore extrahieren (wir suchen nach dem Präfix §8ID: )
+            if (meta != null && meta.hasLore() && !meta.getLore().isEmpty()) {
+                String firstLine = meta.getLore().get(0);
+                if (firstLine.startsWith("§8ID: ")) {
+                    buttonId = firstLine.replace("§8ID: ", "");
+                }
+            }
+
+            // Falls keine ID existiert (neues Item), generieren und SOFORT speichern
+            if (buttonId == null) {
+                buttonId = UUID.randomUUID().toString();
+                updateButtonLore(item, buttonId);
+            }
+            
+            List<String> connectedBlocks = dataManager.getConnectedBlocks(buttonId);
             if (connectedBlocks == null) {
                 connectedBlocks = new ArrayList<>();
             }
 
-            int maxDoors = configManager.getMaxDoors();
-            int maxGates = configManager.getMaxDoors();
-            int maxTraps = configManager.getMaxDoors();
-            int maxLamps = configManager.getMaxLamps();
-            int maxNoteBlocks = configManager.getMaxNoteBlocks();
-            int maxBells = configManager.getMaxBells();
-
-            int doorCount = (int) connectedBlocks.stream().filter(loc -> isDoor(getMaterialFromLocation(loc))).count();
-            int gateCount = (int) connectedBlocks.stream().filter(loc -> isGate(getMaterialFromLocation(loc))).count();
-            int trapCount = (int) connectedBlocks.stream().filter(loc -> isTrapdoor(getMaterialFromLocation(loc))).count();
-            int lampCount = (int) connectedBlocks.stream().filter(loc -> getMaterialFromLocation(loc) == Material.REDSTONE_LAMP).count();
-            int noteBlockCount = (int) connectedBlocks.stream().filter(loc -> getMaterialFromLocation(loc) == Material.NOTE_BLOCK).count();
-            int bellCount = (int) connectedBlocks.stream().filter(loc -> getMaterialFromLocation(loc) == Material.BELL).count();
-
-            if (isDoor(block.getType()) && doorCount >= maxDoors) {
-                event.getPlayer().sendMessage(configManager.getMessage("max-tueren-erreicht"));
-                return;
-            }
-            if (isGate(block.getType()) && gateCount >= maxGates) {
-                event.getPlayer().sendMessage(configManager.getMessage("max-gates-erreicht"));
-                return;
-            }
-            if (isTrapdoor(block.getType()) && trapCount >= maxTraps) {
-                event.getPlayer().sendMessage(configManager.getMessage("max-fallturen-erreicht"));
-                return;
-            }
-            if (block.getType() == Material.REDSTONE_LAMP && lampCount >= maxLamps) {
-                event.getPlayer().sendMessage(configManager.getMessage("max-lampen-erreicht"));
-                return;
-            }
-            if (block.getType() == Material.NOTE_BLOCK && noteBlockCount >= maxNoteBlocks) {
-                event.getPlayer().sendMessage(configManager.getMessage("max-notenbloecke-erreicht"));
-                return;
-            }
-            if (block.getType() == Material.BELL && bellCount >= maxBells) {
-                event.getPlayer().sendMessage(configManager.getMessage("max-glocken-erreicht"));
-                return;
-            }
-
             String blockLocation = block.getWorld().getName() + "," + block.getX() + "," + block.getY() + "," + block.getZ();
-            if (!connectedBlocks.contains(blockLocation)) {
+            if (connectedBlocks.contains(blockLocation)) {
+                player.sendMessage(configManager.getMessage("block-bereits-verbunden"));
+                return;
+            }
+
+            if (checkLimits(player, block.getType(), connectedBlocks)) {
                 connectedBlocks.add(blockLocation);
-                dataManager.setConnectedBlocks(playerUUID, buttonId, connectedBlocks);
-                updateButtonLore(item, buttonId);
-                event.getPlayer().sendMessage(configManager.getMessage("block-verbunden"));
-            } else {
-                event.getPlayer().sendMessage(configManager.getMessage("block-bereits-verbunden"));
+                dataManager.setConnectedBlocks(playerUUID.toString(), buttonId, connectedBlocks);
+                player.sendMessage(configManager.getMessage("block-verbunden"));
             }
         }
     }
 
+    private void toggleConnectedBlocks(Player player, UUID playerUUID, List<String> connectedBlocks) {
+        boolean anyDoorOpened = false, anyDoorClosed = false;
+        boolean anyGateOpened = false, anyGateClosed = false;
+        boolean anyTrapOpened = false, anyTrapClosed = false;
+        boolean anyLampOn = false, anyLampOff = false;
+        boolean anyNoteBlockPlayed = false;
+        boolean anyBellPlayed = false;
+
+        for (String locStr : connectedBlocks) {
+            Location location = parseLocation(locStr);
+            if (location == null) continue;
+            Block targetBlock = location.getBlock();
+
+            if (isDoor(targetBlock.getType()) || isGate(targetBlock.getType()) || isTrapdoor(targetBlock.getType())) {
+                if (targetBlock.getBlockData() instanceof Openable) {
+                    Openable openable = (Openable) targetBlock.getBlockData();
+                    boolean wasOpen = openable.isOpen();
+                    openable.setOpen(!wasOpen);
+                    targetBlock.setBlockData(openable);
+
+                    if (isDoor(targetBlock.getType())) {
+                        if (!wasOpen) anyDoorOpened = true; else anyDoorClosed = true;
+                    } else if (isGate(targetBlock.getType())) {
+                        if (!wasOpen) anyGateOpened = true; else anyGateClosed = true;
+                    } else if (isTrapdoor(targetBlock.getType())) {
+                        if (!wasOpen) anyTrapOpened = true; else anyTrapClosed = true;
+                    }
+                }
+            } 
+            else if (targetBlock.getType() == Material.REDSTONE_LAMP) {
+                Lightable lamp = (Lightable) targetBlock.getBlockData();
+                boolean wasLit = lamp.isLit();
+                lamp.setLit(!wasLit);
+                targetBlock.setBlockData(lamp);
+                if (!wasLit) anyLampOn = true; else anyLampOff = true;
+            } 
+            else if (targetBlock.getType() == Material.NOTE_BLOCK) {
+                String instrument = dataManager.getPlayerInstrument(playerUUID);
+                if (instrument == null) {
+                    instrument = configManager.getConfig().getString("default-note", "PIANO");
+                }
+                plugin.playDoorbellSound(location, instrument);
+                anyNoteBlockPlayed = true;
+            } 
+            else if (targetBlock.getType() == Material.BELL) {
+                targetBlock.getWorld().playSound(location, org.bukkit.Sound.BLOCK_BELL_USE, 3.0f, 1.0f);
+                anyBellPlayed = true;
+            }
+        }
+
+        if (anyDoorOpened) player.sendMessage(configManager.getMessage("tueren-geoeffnet"));
+        if (anyDoorClosed) player.sendMessage(configManager.getMessage("tueren-geschlossen"));
+        if (anyGateOpened) player.sendMessage(configManager.getMessage("gates-geoeffnet"));
+        if (anyGateClosed) player.sendMessage(configManager.getMessage("gates-geschlossen"));
+        if (anyTrapOpened) player.sendMessage(configManager.getMessage("fallturen-geoeffnet"));
+        if (anyTrapClosed) player.sendMessage(configManager.getMessage("fallturen-geschlossen"));
+        if (anyLampOn) player.sendMessage(configManager.getMessage("lampen-eingeschaltet"));
+        if (anyLampOff) player.sendMessage(configManager.getMessage("lampen-ausgeschaltet"));
+        if (anyNoteBlockPlayed) player.sendMessage(configManager.getMessage("notenblock-ausgeloest"));
+        if (anyBellPlayed) player.sendMessage(configManager.getMessage("glocke-gelaeutet"));
+    }
+
+    private boolean checkLimits(Player player, Material type, List<String> connected) {
+        if (isDoor(type)) {
+            if (connected.stream().filter(l -> isDoor(getMaterialFromLocation(l))).count() >= configManager.getMaxDoors()) {
+                player.sendMessage(configManager.getMessage("max-tueren-erreicht"));
+                return false;
+            }
+        } else if (isGate(type)) {
+            if (connected.stream().filter(l -> isGate(getMaterialFromLocation(l))).count() >= configManager.getMaxGates()) {
+                player.sendMessage(configManager.getMessage("max-gates-erreicht"));
+                return false;
+            }
+        } else if (isTrapdoor(type)) {
+            if (connected.stream().filter(l -> isTrapdoor(getMaterialFromLocation(l))).count() >= configManager.getMaxTrapdoors()) {
+                player.sendMessage(configManager.getMessage("max-fallturen-erreicht"));
+                return false;
+            }
+        } else if (type == Material.REDSTONE_LAMP) {
+            if (connected.stream().filter(l -> getMaterialFromLocation(l) == Material.REDSTONE_LAMP).count() >= configManager.getMaxLamps()) {
+                player.sendMessage(configManager.getMessage("max-lampen-erreicht"));
+                return false;
+            }
+        } else if (type == Material.NOTE_BLOCK) {
+            if (connected.stream().filter(l -> getMaterialFromLocation(l) == Material.NOTE_BLOCK).count() >= configManager.getMaxNoteBlocks()) {
+                player.sendMessage(configManager.getMessage("max-notenbloecke-erreicht"));
+                return false;
+            }
+        } else if (type == Material.BELL) {
+            if (connected.stream().filter(l -> getMaterialFromLocation(l) == Material.BELL).count() >= configManager.getMaxBells()) {
+                player.sendMessage(configManager.getMessage("max-glocken-erreicht"));
+                return false;
+            }
+        }
+        return true;
+    }
+
     @EventHandler
     public void onBlockPlace(BlockPlaceEvent event) {
-        String playerUUID = event.getPlayer().getUniqueId().toString();
         ItemStack item = event.getItemInHand();
+        if (item == null || !item.hasItemMeta() || !item.getItemMeta().getDisplayName().contains("§6Steuer-")) {
+            return;
+        }
+
         Block block = event.getBlockPlaced();
+        ItemMeta meta = item.getItemMeta();
+        String buttonId = null;
 
-        if (item == null || (!item.getType().equals(Material.STONE_BUTTON) &&
-                             !item.getType().equals(Material.DAYLIGHT_DETECTOR) &&
-                             !item.getType().equals(Material.NOTE_BLOCK) &&
-                             !item.getType().equals(Material.TRIPWIRE_HOOK))) {
-            return;
+        if (meta != null && meta.hasLore() && !meta.getLore().isEmpty()) {
+            String firstLine = meta.getLore().get(0);
+            if (firstLine.startsWith("§8ID: ")) {
+                buttonId = firstLine.replace("§8ID: ", "");
+            }
         }
 
-        if (!item.hasItemMeta() || !item.getItemMeta().getDisplayName().contains("§6Steuer-")) {
-            return;
+        if (buttonId == null) {
+            buttonId = UUID.randomUUID().toString();
+            updateButtonLore(item, buttonId);
         }
-
-        String buttonId = item.getItemMeta().hasLore() ? item.getItemMeta().getLore().get(0) : UUID.randomUUID().toString();
+        
         String blockLocation = block.getWorld().getName() + "," + block.getX() + "," + block.getY() + "," + block.getZ();
-        dataManager.addPlacedController(playerUUID, blockLocation, buttonId);
+        dataManager.registerController(blockLocation, event.getPlayer().getUniqueId(), buttonId);
         event.getPlayer().sendMessage(configManager.getMessage("controller-platziert"));
     }
 
     @EventHandler
     public void onBlockBreak(BlockBreakEvent event) {
-        String playerUUID = event.getPlayer().getUniqueId().toString();
         Block block = event.getBlock();
         String blockLocation = block.getWorld().getName() + "," + block.getX() + "," + block.getY() + "," + block.getZ();
-        String buttonId = dataManager.getButtonIdForPlacedController(playerUUID, blockLocation);
+        String buttonId = dataManager.getButtonIdForLocation(blockLocation);
 
         if (buttonId != null) {
-            dataManager.removePlacedController(playerUUID, blockLocation);
-            dataManager.setConnectedBlocks(playerUUID, buttonId, null);
-            dataManager.removeMotionSensorSettings(blockLocation); // Entferne Bewegungsmelder-Einstellungen
+            if (!dataManager.isOwner(buttonId, event.getPlayer().getUniqueId())) {
+                event.getPlayer().sendMessage(configManager.getMessage("nur-besitzer-abbauen"));
+                event.setCancelled(true);
+                return;
+            }
+
+            dataManager.removeController(blockLocation);
             event.getPlayer().sendMessage(configManager.getMessage("controller-entfernt"));
         }
     }
 
-    private boolean isDoor(Material material) {
-        return material.toString().endsWith("_DOOR");
-    }
-
-    private boolean isGate(Material material) {
-        return material.toString().endsWith("_FENCE_GATE");
-    }
-
-    private boolean isTrapdoor(Material material) {
-        return material.toString().endsWith("_TRAPDOOR");
+    private boolean isButton(Material m) { return m.name().endsWith("_BUTTON"); }
+    private boolean isDoor(Material m) { return m.name().endsWith("_DOOR"); }
+    private boolean isGate(Material m) { return m.name().endsWith("_FENCE_GATE"); }
+    private boolean isTrapdoor(Material m) { return m.name().endsWith("_TRAPDOOR"); }
+    
+    private boolean isInteractableTarget(Material m) {
+        return isDoor(m) || isGate(m) || isTrapdoor(m) || m == Material.REDSTONE_LAMP || m == Material.NOTE_BLOCK || m == Material.BELL;
     }
 
     private Material getMaterialFromLocation(String locString) {
-        String[] parts = locString.split(",");
-        if (parts.length != 4) return null;
-        Location loc = new Location(plugin.getServer().getWorld(parts[0]),
-                Integer.parseInt(parts[1]),
-                Integer.parseInt(parts[2]),
-                Integer.parseInt(parts[3]));
-        return loc.getBlock().getType();
+        Location l = parseLocation(locString);
+        return l != null ? l.getBlock().getType() : Material.AIR;
+    }
+
+    private Location parseLocation(String s) {
+        String[] p = s.split(",");
+        if (p.length != 4) return null;
+        try {
+            return new Location(Bukkit.getWorld(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3]));
+        } catch (Exception e) { return null; }
     }
 
     private void updateButtonLore(ItemStack item, String buttonId) {
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            List<String> lore = meta.hasLore() ? meta.getLore() : new ArrayList<>();
-            if (!lore.contains(buttonId)) {
-                lore.add(buttonId);
-                meta.setLore(lore);
-                item.setItemMeta(meta);
-            }
+            List<String> lore = new ArrayList<>();
+            lore.add("§8ID: " + buttonId); 
+            lore.add("§7Ein universeller Controller für");
+            meta.setLore(lore);
+            item.setItemMeta(meta);
         }
     }
 }
