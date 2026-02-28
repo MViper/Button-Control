@@ -1,57 +1,64 @@
-# lang.yml - ButtonControl Nachrichten
+# lang.yml – ButtonControl Nachrichten
 
-# --- Bestehende Nachrichten (Türen/Tore/Falltüren) ---
+# ── Holztüren ────────────────────────────────────────────────────────────────
 tueren-geoeffnet: "§aTüren wurden geöffnet."
 tueren-geschlossen: "§cTüren wurden geschlossen."
 max-tueren-erreicht: "§cMaximale Anzahl an Türen erreicht."
 
+# ── Eisentüren (NEU) ─────────────────────────────────────────────────────────
+eisentueren-geoeffnet: "§aEisentüren wurden geöffnet."
+eisentueren-geschlossen: "§cEisentüren wurden geschlossen."
+eisenfallturen-geoeffnet: "§aEisen-Falltüren wurden geöffnet."
+eisenfallturen-geschlossen: "§cEisen-Falltüren wurden geschlossen."
+
+# ── Zauntore ─────────────────────────────────────────────────────────────────
 gates-geoeffnet: "§aZauntore wurden geöffnet."
 gates-geschlossen: "§cZauntore wurden geschlossen."
 max-gates-erreicht: "§cMaximale Anzahl an Zauntoren erreicht."
 
+# ── Falltüren ────────────────────────────────────────────────────────────────
 fallturen-geoeffnet: "§aFalltüren wurden geöffnet."
 fallturen-geschlossen: "§cFalltüren wurden geschlossen."
 max-fallturen-erreicht: "§cMaximale Anzahl an Falltüren erreicht."
 
-# --- Lampen & Glocken ---
+# ── Lampen & Glocken ─────────────────────────────────────────────────────────
 lampen-eingeschaltet: "§aLampen wurden eingeschaltet."
 lampen-ausgeschaltet: "§cLampen wurden ausgeschaltet."
 max-lampen-erreicht: "§cMaximale Anzahl an Lampen erreicht."
 glocke-gelaeutet: "§aGlocke wurde geläutet."
 max-glocken-erreicht: "§cMaximale Anzahl an Glocken erreicht."
 
-# --- Notenblöcke & Instrumente ---
+# ── Notenblöcke ──────────────────────────────────────────────────────────────
 notenblock-ausgeloest: "§aNotenblock-Klingel wurde ausgelöst."
-instrument-gesetzt: "§aDein Notenblock-Instrument wurde auf %s gesetzt."
+instrument-gesetzt: "§aDein Instrument wurde auf %s gesetzt."
 ungueltiges-instrument: "§cUngültiges Instrument! Verwende: /bc note <Instrument>"
 max-notenbloecke-erreicht: "§cMaximale Anzahl an Notenblöcken erreicht."
 
-# --- Kolben (Erweiterung) ---
+# ── Kolben (vorbereitet für zukünftige Erweiterung) ─────────────────────────
 kolben-ausgefahren: "§6[ButtonControl] §7Kolben wurden ausgefahren."
-kolben-eingefahren: "§6[ButtonControl] §7Kolben wurden eingefahren."
+kolben-eingefahren: "§6[ButtonControl] §7Kolben wurden eingezogen."
 max-kolben-erreicht: "§6[ButtonControl] §7Maximale Anzahl an Kolben erreicht."
 
-# --- Controller & Verbindung ---
+# ── Controller & Verbindung ──────────────────────────────────────────────────
 block-verbunden: "§aBlock verbunden."
 block-bereits-verbunden: "§cBlock ist bereits verbunden."
+block-verbindung-entfernt: "§7Verbindung zu abgebautem Block automatisch entfernt."
 keine-bloecke-verbunden: "§cKeine Blöcke sind verbunden."
 bloecke-umgeschaltet: "§eBlöcke wurden umgeschaltet."
 controller-platziert: "§aController platziert."
 controller-entfernt: "§cController entfernt."
+controller-umbenannt: "§aController umbenannt zu: §f%s"
 
-# --- Trust- & Sicherheitssystem ---
+# ── Trust- & Sicherheitssystem ───────────────────────────────────────────────
 keine-berechtigung: "§cDu hast keine Berechtigung für diesen Befehl!"
-keine-berechtigung-controller: "§cDu hast keine Berechtigung, diesen Controller zu benutzen!"
-nur-besitzer-abbauen: "§cNur der Besitzer darf diesen Controller verwalten oder abbauen!"
+keine-berechtigung-controller: "§cDu darfst diesen Controller nicht benutzen!"
+nur-besitzer-abbauen: "§cNur der Besitzer kann diesen Controller verwalten!"
 spieler-nicht-gefunden: "§cDieser Spieler wurde nicht gefunden."
+# %s = "§aÖffentlich" oder "§cPrivat"
+status-geandert: "§6[BC] §7Controller ist nun %s§7."
+trust-hinzugefuegt: "§a%s darf diesen Controller nun benutzen."
+trust-entfernt: "§c%s wurde das Vertrauen entzogen."
+kein-controller-im-blick: "§cBitte sieh einen Controller direkt an!"
 
-# %s wird durch "§aÖffentlich" oder "§cPrivat" ersetzt
-status-geandert: "§6[ButtonControl] §7Der Controller ist nun %s§7."
-
-# Trust Nachrichten
-trust-hinzugefuegt: "§aDu hast %s Vertrauen für diesen Controller gegeben."
-trust-entfernt: "§cDu hast %s das Vertrauen für diesen Controller entzogen."
-kein-controller-im-blick: "§cDu musst einen Controller (Button, Haken oder Sensor) direkt ansehen!"
-
-# --- System ---
+# ── System ───────────────────────────────────────────────────────────────────
 konfiguration-neugeladen: "§aKonfiguration und Daten erfolgreich neu geladen!"

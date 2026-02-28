@@ -1,4 +1,6 @@
-# Maximale Anzahl an steuerbaren Blöcken pro Controller
+# ButtonControl – Konfiguration
+
+# ── Maximale Anzahl verbundener Blöcke pro Controller ──────────────────────
 max-doors: 20
 max-lamps: 50
 max-noteblocks: 10
@@ -6,13 +8,28 @@ max-gates: 20
 max-trapdoors: 20
 max-bells: 5
 
-# Standard-Instrument für Notenblöcke
+# ── Notenblöcke ─────────────────────────────────────────────────────────────
 default-note: "PIANO"
-
-# Doppelter Notenblock-Ton
 double-note-enabled: true
 double-note-delay-ms: 1000
 
-# Bewegungsmelder-Einstellungen
+# ── Bewegungsmelder ──────────────────────────────────────────────────────────
+# Gilt als Standardwert wenn für einen Sensor nichts individuell gesetzt wurde
 motion-detection-radius: 5.0
 motion-close-delay-ms: 5000
+# Cooldown: wie lange nach dem Schließen der Sensor nicht erneut auslöst
+motion-trigger-cooldown-ms: 2000
+
+# ── Sounds beim Öffnen/Schließen (NEU) ──────────────────────────────────────
+# Auf false setzen um alle Controller-Sounds zu deaktivieren
+sounds:
+  enabled: true
+  # Holztüren, Zauntore, Falltüren
+  door-open:  BLOCK_WOODEN_DOOR_OPEN
+  door-close: BLOCK_WOODEN_DOOR_CLOSE
+  # Eisentüren und Eisenfalltüren
+  iron-door-open:  BLOCK_IRON_DOOR_OPEN
+  iron-door-close: BLOCK_IRON_DOOR_CLOSE
+  # Redstone-Lampen
+  lamp-on:  BLOCK_LEVER_CLICK
+  lamp-off: BLOCK_LEVER_CLICK

@@ -1,26 +1,32 @@
 name: ButtonControl
-version: 1.5
+version: 1.6
 main: viper.ButtonControl
 api-version: 1.21
 author: M_Viper
-description: Ein Plugin, um Türen, Redstone-Lampen und Notenblöcke mit einem Button, Tageslichtsensor oder Bewegungsmelder zu steuern.
+description: >
+  Steuert Türen, Eisentüren, Lampen, Notenblöcke und Glocken mit Buttons,
+  Tageslichtsensoren, Bewegungsmeldern, Teppich-Sensoren und Schildern.
+  Unterstützt Zeitpläne, Trust-System und Admin-Bypass.
 
 commands:
   bc:
     description: Hauptbefehl für ButtonControl
-    usage: /bc <info|reload|note|trust|untrust|public|private>
+    usage: /bc <info|reload|note|list|rename|schedule|trust|untrust|public|private>
     aliases: [buttoncontrol]
 
 permissions:
+  buttoncontrol.admin:
+    description: Admin-Bypass – Zugriff auf und Verwaltung aller Controller
+    default: op
   buttoncontrol.reload:
-    description: Erlaubt das Neuladen der Plugin-Konfiguration
+    description: Konfiguration neu laden
     default: op
   buttoncontrol.note:
-    description: Erlaubt das Ändern des Notenblock-Instruments
+    description: Notenblock-Instrument ändern
     default: true
   buttoncontrol.update:
-    description: Erlaubt das Empfangen von Update-Benachrichtigungen
+    description: Update-Benachrichtigungen empfangen
     default: op
   buttoncontrol.trust:
-    description: Erlaubt das Verwalten von Vertrauen und Status (Public/Private)
+    description: Trust-System und Public/Private-Status verwalten
     default: true
