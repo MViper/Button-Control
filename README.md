@@ -71,9 +71,9 @@ Plugin-Entwicklung & Idee
 
 ---
 
-## 📄 Lizenz
+**Copyright © 2026 - M_Viper - Alle Rechte vorbehalten**
 
-keine Angegeben 
+Die unbefugte Vervielfältigung, Verbreitung oder Weitergabe dieses Plugins ist strafbar und wird rechtlich verfolgt.
 
 ---
 
