@@ -20,6 +20,24 @@ motion-close-delay-ms: 5000
 # Cooldown: wie lange nach dem Schließen der Sensor nicht erneut auslöst
 motion-trigger-cooldown-ms: 2000
 
+# ── Optionales MySQL-Backend ────────────────────────────────────────────────
+mysql:
+  # false = data.yml verwenden, true = MySQL verwenden
+  enabled: false
+  host: "127.0.0.1"
+  port: 3306
+  database: "controll"
+  user: "controll"
+  password: "controll"
+
+# ── Controller-Name beim Anschauen ──────────────────────────────────────────
+controller-name-display:
+  enabled: true
+  # Distanz in Blöcken für die Blickerkennung
+  max-look-distance: 8
+  # %s = Name aus /bc rename
+  format: "§6Controller: §f%s"
+
 # ── Sounds beim Öffnen/Schließen (NEU) ──────────────────────────────────────
 # Auf false setzen um alle Controller-Sounds zu deaktivieren
 sounds:

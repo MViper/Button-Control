@@ -17,6 +17,8 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.Note;
 import org.bukkit.Note.Tone;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.chat.TextComponent;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -36,6 +38,9 @@ public class ButtonControl extends JavaPlugin {
 
     // Zeitgesteuerte Automation – verhindert mehrfaches Auslösen pro Zustandswechsel
     private final Map<String, Boolean> timedControllerLastState = new HashMap<>();
+
+    // Actionbar-Status pro Spieler für die Namensanzeige
+    private final Map<java.util.UUID, String> lastControllerActionbar = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -84,8 +89,16 @@ public class ButtonControl extends JavaPlugin {
         getServer().getScheduler().runTaskTimer(this, this::checkDaylightSensors,  0L, 20L * 10);
         getServer().getScheduler().runTaskTimer(this, this::checkMotionSensors,    0L, 10L);
         getServer().getScheduler().runTaskTimer(this, this::checkTimedControllers, 0L, 20L * 5);
+        getServer().getScheduler().runTaskTimer(this, this::updateControllerNameActionBar, 0L, 5L);
 
         getLogger().info("ButtonControl v" + getDescription().getVersion() + " wurde erfolgreich aktiviert!");
+    }
+
+    @Override
+    public void onDisable() {
+        if (dataManager != null) {
+            dataManager.shutdown();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -279,6 +292,65 @@ public class ButtonControl extends JavaPlugin {
     }
 
     // -----------------------------------------------------------------------
+    //  Controller-Name bei Blickkontakt (Actionbar)
+    // -----------------------------------------------------------------------
+
+    private void updateControllerNameActionBar() {
+        if (!configManager.getConfig().getBoolean("controller-name-display.enabled", true)) {
+            clearAllControllerActionBars();
+            return;
+        }
+
+        int maxDistance = Math.max(1,
+            configManager.getConfig().getInt("controller-name-display.max-look-distance", 8));
+        String format = configManager.getConfig().getString(
+            "controller-name-display.format", "§6Controller: §f%s");
+
+        for (Player player : getServer().getOnlinePlayers()) {
+            String message = null;
+            Block target = player.getTargetBlockExact(maxDistance);
+            if (isValidController(target)) {
+                String targetLoc = toLoc(target);
+                String buttonId = dataManager.getButtonIdForLocation(targetLoc);
+                if (buttonId != null) {
+                    boolean canSee = dataManager.canAccess(buttonId, player.getUniqueId())
+                        || player.hasPermission("buttoncontrol.admin");
+                    String name = dataManager.getControllerName(buttonId);
+                    if (canSee && name != null && !name.trim().isEmpty()) {
+                        message = String.format(format, name);
+                    }
+                }
+            }
+
+            java.util.UUID uuid = player.getUniqueId();
+            String previous = lastControllerActionbar.get(uuid);
+            if (message == null) {
+                if (previous != null) {
+                    sendActionBar(player, " ");
+                    lastControllerActionbar.remove(uuid);
+                }
+            } else if (!message.equals(previous)) {
+                sendActionBar(player, message);
+                lastControllerActionbar.put(uuid, message);
+            }
+        }
+    }
+
+    private void clearAllControllerActionBars() {
+        if (lastControllerActionbar.isEmpty()) return;
+        for (Player player : getServer().getOnlinePlayers()) {
+            if (lastControllerActionbar.containsKey(player.getUniqueId())) {
+                sendActionBar(player, " ");
+            }
+        }
+        lastControllerActionbar.clear();
+    }
+
+    private void sendActionBar(Player player, String message) {
+        player.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacyText(message));
+    }
+
+    // -----------------------------------------------------------------------
     //  Bewegungsmelder
     // -----------------------------------------------------------------------
 
@@ -379,6 +451,7 @@ public class ButtonControl extends JavaPlugin {
             configManager.reloadConfig();
             dataManager.reloadData();
             timedControllerLastState.clear();
+            clearAllControllerActionBars();
             sender.sendMessage(configManager.getMessage("konfiguration-neugeladen"));
             return true;
         }

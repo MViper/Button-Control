@@ -75,6 +75,19 @@ public class ConfigManager {
         def(config, "motion-close-delay-ms",   5000);
         def(config, "motion-trigger-cooldown-ms", 2000);
 
+        // Optionales MySQL-Backend
+        def(config, "mysql.enabled", false);
+        def(config, "mysql.host", "127.0.0.1");
+        def(config, "mysql.port", 3306);
+        def(config, "mysql.database", "buttoncontrol");
+        def(config, "mysql.user", "root");
+        def(config, "mysql.password", "");
+
+        // Controller-Namensanzeige beim Anschauen
+        def(config, "controller-name-display.enabled", true);
+        def(config, "controller-name-display.max-look-distance", 8);
+        def(config, "controller-name-display.format", "§6Controller: §f%s");
+
         // Sounds (NEU)
         def(config, "sounds.enabled",                        true);
         def(config, "sounds.door-open",   "BLOCK_WOODEN_DOOR_OPEN");

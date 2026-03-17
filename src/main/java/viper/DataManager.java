@@ -14,10 +14,19 @@ public class DataManager {
     private final ButtonControl plugin;
     private FileConfiguration data;
     private File dataFile;
+    private MySQLStorage mySQLStorage;
 
     public DataManager(ButtonControl plugin) {
         this.plugin = plugin;
         loadData();
+        initializeStorage();
+    }
+
+    private void initializeStorage() {
+        mySQLStorage = new MySQLStorage(plugin);
+        if (!mySQLStorage.initialize()) {
+            mySQLStorage = null;
+        }
     }
 
     private void loadData() {
@@ -28,6 +37,16 @@ public class DataManager {
 
     public void reloadData() {
         data = YamlConfiguration.loadConfiguration(dataFile);
+        if (mySQLStorage != null) {
+            mySQLStorage.close();
+        }
+        initializeStorage();
+    }
+
+    public void shutdown() {
+        if (mySQLStorage != null) {
+            mySQLStorage.close();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -35,12 +54,14 @@ public class DataManager {
     // -----------------------------------------------------------------------
 
     public boolean canAccess(String buttonId, UUID playerUUID) {
+        if (mySQLStorage != null) return mySQLStorage.canAccess(buttonId, playerUUID);
         if (isPublic(buttonId)) return true;
         if (isOwner(buttonId, playerUUID)) return true;
         return data.getStringList("trust." + buttonId).contains(playerUUID.toString());
     }
 
     public boolean isOwner(String buttonId, UUID playerUUID) {
+        if (mySQLStorage != null) return mySQLStorage.isOwner(buttonId, playerUUID);
         return data.contains("players." + playerUUID + ".buttons." + buttonId)
             || data.contains("players." + playerUUID + ".placed-controllers");
         // Zweite Bedingung: prüft ob irgendein placed-controller dieser UUID die buttonId enthält
@@ -51,10 +72,15 @@ public class DataManager {
     // -----------------------------------------------------------------------
 
     public String getButtonIdForLocation(String location) {
+        if (mySQLStorage != null) return mySQLStorage.getButtonIdForLocation(location);
         return getButtonIdForPlacedController(location);
     }
 
     public void registerController(String location, UUID ownerUUID, String buttonId) {
+        if (mySQLStorage != null) {
+            mySQLStorage.registerController(location, ownerUUID, buttonId);
+            return;
+        }
         data.set("players." + ownerUUID + ".placed-controllers." + location, buttonId);
         // Leere buttons-Liste anlegen damit isOwner() sofort greift
         if (!data.contains("players." + ownerUUID + ".buttons." + buttonId)) {
@@ -64,16 +90,38 @@ public class DataManager {
     }
 
     public void removeController(String location) {
-        if (data.getConfigurationSection("players") == null) return;
-        for (String uuid : data.getConfigurationSection("players").getKeys(false)) {
-            String path = "players." + uuid + ".placed-controllers." + location;
-            if (data.contains(path)) data.set(path, null);
+        if (mySQLStorage != null) {
+            mySQLStorage.removeController(location);
+            return;
+        }
+        // buttonId vor dem Löschen des Location-Eintrags ermitteln
+        String buttonId = getButtonIdForPlacedController(location);
+        String ownerUUID = null;
+        if (data.getConfigurationSection("players") != null) {
+            for (String uuid : data.getConfigurationSection("players").getKeys(false)) {
+                String path = "players." + uuid + ".placed-controllers." + location;
+                if (data.contains(path)) {
+                    data.set(path, null);
+                    ownerUUID = uuid;
+                }
+            }
+        }
+        // Alle zugehörigen Daten (Name, Status, Trust, Zeitplan, Verbindungen) bereinigen
+        if (buttonId != null) {
+            data.set("names." + buttonId, null);
+            data.set("public-status." + buttonId, null);
+            data.set("trust." + buttonId, null);
+            data.set("schedules." + buttonId, null);
+            if (ownerUUID != null) {
+                data.set("players." + ownerUUID + ".buttons." + buttonId, null);
+            }
         }
         removeMotionSensorSettings(location);
         saveData();
     }
 
     public String getButtonIdForPlacedController(String location) {
+        if (mySQLStorage != null) return mySQLStorage.getButtonIdForPlacedController(location);
         if (data.getConfigurationSection("players") == null) return null;
         for (String uuid : data.getConfigurationSection("players").getKeys(false)) {
             String val = data.getString("players." + uuid + ".placed-controllers." + location);
@@ -83,6 +131,7 @@ public class DataManager {
     }
 
     public List<String> getAllPlacedControllers() {
+        if (mySQLStorage != null) return mySQLStorage.getAllPlacedControllers();
         List<String> result = new ArrayList<>();
         if (data.getConfigurationSection("players") == null) return result;
         for (String uuid : data.getConfigurationSection("players").getKeys(false)) {
@@ -97,11 +146,16 @@ public class DataManager {
     // -----------------------------------------------------------------------
 
     public void setConnectedBlocks(String playerUUID, String buttonId, List<String> blocks) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setConnectedBlocks(playerUUID, buttonId, blocks);
+            return;
+        }
         data.set("players." + playerUUID + ".buttons." + buttonId, blocks);
         saveData();
     }
 
     public List<String> getConnectedBlocks(String buttonId) {
+        if (mySQLStorage != null) return mySQLStorage.getConnectedBlocks(buttonId);
         if (data.getConfigurationSection("players") == null) return new ArrayList<>();
         for (String uuid : data.getConfigurationSection("players").getKeys(false)) {
             String path = "players." + uuid + ".buttons." + buttonId;
@@ -115,6 +169,7 @@ public class DataManager {
      * Wird aufgerufen wenn ein verbundener Block abgebaut wird.
      */
     public boolean removeFromAllConnectedBlocks(String locStr) {
+        if (mySQLStorage != null) return mySQLStorage.removeFromAllConnectedBlocks(locStr);
         if (data.getConfigurationSection("players") == null) return false;
         boolean changed = false;
         for (String uuid : data.getConfigurationSection("players").getKeys(false)) {
@@ -138,11 +193,16 @@ public class DataManager {
     // -----------------------------------------------------------------------
 
     public void setControllerName(String buttonId, String name) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setControllerName(buttonId, name);
+            return;
+        }
         data.set("names." + buttonId, name);
         saveData();
     }
 
     public String getControllerName(String buttonId) {
+        if (mySQLStorage != null) return mySQLStorage.getControllerName(buttonId);
         return data.getString("names." + buttonId);
     }
 
@@ -151,25 +211,39 @@ public class DataManager {
     // -----------------------------------------------------------------------
 
     public void setScheduleOpenTime(String buttonId, long ticks) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setScheduleOpenTime(buttonId, ticks);
+            return;
+        }
         data.set("schedules." + buttonId + ".open-time", ticks);
         saveData();
     }
 
     public long getScheduleOpenTime(String buttonId) {
+        if (mySQLStorage != null) return mySQLStorage.getScheduleOpenTime(buttonId);
         return data.getLong("schedules." + buttonId + ".open-time", -1);
     }
 
     public void setScheduleCloseTime(String buttonId, long ticks) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setScheduleCloseTime(buttonId, ticks);
+            return;
+        }
         data.set("schedules." + buttonId + ".close-time", ticks);
         saveData();
     }
 
     public long getScheduleCloseTime(String buttonId) {
+        if (mySQLStorage != null) return mySQLStorage.getScheduleCloseTime(buttonId);
         return data.getLong("schedules." + buttonId + ".close-time", -1);
     }
 
     /** Entfernt den kompletten Zeitplan für einen Controller. */
     public void clearSchedule(String buttonId) {
+        if (mySQLStorage != null) {
+            mySQLStorage.clearSchedule(buttonId);
+            return;
+        }
         data.set("schedules." + buttonId, null);
         saveData();
     }
@@ -179,6 +253,10 @@ public class DataManager {
     // -----------------------------------------------------------------------
 
     public void addTrustedPlayer(String buttonId, UUID targetUUID) {
+        if (mySQLStorage != null) {
+            mySQLStorage.addTrustedPlayer(buttonId, targetUUID);
+            return;
+        }
         List<String> trusted = data.getStringList("trust." + buttonId);
         if (!trusted.contains(targetUUID.toString())) {
             trusted.add(targetUUID.toString());
@@ -188,6 +266,10 @@ public class DataManager {
     }
 
     public void removeTrustedPlayer(String buttonId, UUID targetUUID) {
+        if (mySQLStorage != null) {
+            mySQLStorage.removeTrustedPlayer(buttonId, targetUUID);
+            return;
+        }
         List<String> trusted = data.getStringList("trust." + buttonId);
         trusted.remove(targetUUID.toString());
         data.set("trust." + buttonId, trusted);
@@ -195,11 +277,16 @@ public class DataManager {
     }
 
     public void setPublic(String buttonId, boolean isPublic) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setPublic(buttonId, isPublic);
+            return;
+        }
         data.set("public-status." + buttonId, isPublic);
         saveData();
     }
 
     public boolean isPublic(String buttonId) {
+        if (mySQLStorage != null) return mySQLStorage.isPublic(buttonId);
         return data.getBoolean("public-status." + buttonId, false);
     }
 
@@ -208,11 +295,16 @@ public class DataManager {
     // -----------------------------------------------------------------------
 
     public void setPlayerInstrument(UUID playerUUID, String instrument) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setPlayerInstrument(playerUUID, instrument);
+            return;
+        }
         data.set("players." + playerUUID + ".instrument", instrument);
         saveData();
     }
 
     public String getPlayerInstrument(UUID playerUUID) {
+        if (mySQLStorage != null) return mySQLStorage.getPlayerInstrument(playerUUID);
         return data.getString("players." + playerUUID + ".instrument");
     }
 
@@ -221,24 +313,38 @@ public class DataManager {
     // -----------------------------------------------------------------------
 
     public void setMotionSensorRadius(String location, double radius) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setMotionSensorRadius(location, radius);
+            return;
+        }
         data.set("motion-sensors." + location + ".radius", radius);
         saveData();
     }
 
     public double getMotionSensorRadius(String location) {
+        if (mySQLStorage != null) return mySQLStorage.getMotionSensorRadius(location);
         return data.getDouble("motion-sensors." + location + ".radius", -1);
     }
 
     public void setMotionSensorDelay(String location, long delay) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setMotionSensorDelay(location, delay);
+            return;
+        }
         data.set("motion-sensors." + location + ".delay", delay);
         saveData();
     }
 
     public long getMotionSensorDelay(String location) {
+        if (mySQLStorage != null) return mySQLStorage.getMotionSensorDelay(location);
         return data.getLong("motion-sensors." + location + ".delay", -1);
     }
 
     public void removeMotionSensorSettings(String location) {
+        if (mySQLStorage != null) {
+            mySQLStorage.removeMotionSensorSettings(location);
+            return;
+        }
         data.set("motion-sensors." + location, null);
         saveData();
     }
@@ -252,6 +358,7 @@ public class DataManager {
      * Verhindert I/O-Lags auf dem Main-Thread.
      */
     public void saveData() {
+        if (mySQLStorage != null) return;
         final String serialized;
         try {
             serialized = data.saveToString();
