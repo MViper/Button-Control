@@ -263,7 +263,8 @@ Sieh den Controller an und tippe:
 ┌─────────────────────────────────┐
 │     Zeitplan-Einstellungen       │
 │                                   │
-│ [🟢 Öffnungszeit]  [🔧 An/Aus]  [🔴 Schließzeit] │
+│ [⏱ Delay] [⚖ Modus] [🔧 An/Aus] │
+│ [🟢 Öffnungszeit]          [🔴 Schließzeit] │
 │                                   │
 │           [💚 Speichern]              │
 └─────────────────────────────────┘
@@ -275,13 +276,18 @@ Sieh den Controller an und tippe:
 | **Rechtsklick** auf Zeit-Item | −1 Stunde |
 | **Shift + Linksklick** | +15 Minuten |
 | **Shift + Rechtsklick** | −15 Minuten |
+| **Link/Rechtsklick** auf Delay | ±1 Tick (Shift: ±5) |
+| **Klick** auf Modus | `gleichzeitig` / `nacheinander` umschalten |
 | **Klick** auf Hebel/Strauch | Zeitplan ein-/ausschalten |
 | **Klick** auf Smaragd | Speichern & Schließen |
 
 > ⚠️ Die Zeiten sind **Ingame-Zeiten** (ein Minecraft-Tag = 20 Minuten Echtzeit).
 > Beispiel: "07:00" = Minecraft-Sonnenaufgang, "19:00" = Sonnenuntergang.
 
-> Hinweis zu Werfer/Spender: Wenn ein Controller einen aktiven Zeitplan hat, lösen verbundene Werfer/Spender während des Zeitfensters automatisch in Intervallen aus.
+> Hinweis zu Werfer/Spender: Wenn ein Controller einen aktiven Zeitplan hat, lösen verbundene Werfer/Spender während des Zeitfensters automatisch aus.
+> - Modus `gleichzeitig`: Alle verbundenen Werfer/Spender schießen pro Zyklus zusammen.
+> - Modus `nacheinander`: Pro Zyklus schießt ein Gerät, dann rotiert es zum nächsten.
+> - Die Delay-Anzeige zeigt Ticks und Sekunden (z.B. `20 Ticks (1.00s)`).
 
 **Über Mitternacht:** Zeitpläne die über Mitternacht gehen (z.B. Öffnen 22:00, Schließen 04:00) werden korrekt erkannt.
 
@@ -423,7 +429,9 @@ double-note-delay-ms: 1000      # Abstand zwischen den Tönen (ms)
 motion-detection-radius: 5.0    # Erkennungsradius in Blöcken
 motion-close-delay-ms: 5000     # Verzögerung vor dem Schließen (ms)
 motion-trigger-cooldown-ms: 2000 # Mindestzeit zwischen zwei Auslösungen
-timed-container-interval-ticks: 40 # Intervall für Werfer/Spender im Zeitplan (20 Ticks = 1s)
+timed-container-interval-ticks: 40 # Legacy-Fallback für alte Zeitpläne ohne gespeicherten Delay-Wert
+timed-container-shot-delay-ticks: 2 # Standard-Delay zwischen Schüssen im Zeitplan
+timed-container-trigger-mode: simultaneous # Standardmodus: simultaneous oder sequential
 
 # Sounds beim Öffnen/Schließen
 sounds:
@@ -476,7 +484,10 @@ Diese Datei wird **automatisch** verwaltet und sollte nicht manuell bearbeitet w
 → Stelle sicher, dass der Zeitplan in der ScheduleGUI **aktiviert** ist (grüner Hebel, nicht Strauch). Öffne die GUI mit `/bc schedule` und prüfe den Ein/Aus-Status.
 
 **❓ Werfer/Spender schießen zu langsam oder zu schnell im Zeitplan.**
-→ Passe `timed-container-interval-ticks` in `config.yml` an und führe `/bc reload` aus.
+→ Stelle den Delay direkt in `/bc schedule` ein (GUI zeigt Ticks + Sekunden). Für globale Standardwerte passe `timed-container-shot-delay-ticks` in `config.yml` an und führe `/bc reload` aus.
+
+**❓ 2 Werfer/Spender am selben Controller laufen nicht gleich.**
+→ Öffne `/bc schedule` und stelle den Modus auf `gleichzeitig`. Im Modus `nacheinander` rotieren die Geräte absichtlich.
 
 **❓ `/bc list` zeigt "Keine Blöcke verbunden".**
 → Entweder wurde der Controller noch nie mit Blöcken verbunden, oder alle verbundenen Blöcke wurden abgebaut (werden automatisch entfernt).
