@@ -26,7 +26,7 @@
 
 ## Was ist ButtonControl?
 
-ButtonControl erlaubt es Spielern, **Türen, Eisentüren, Zauntore, Falltüren, Redstone-Lampen, Notenblöcke und Glocken** mit einem selbst hergestellten Controller zu steuern – ohne Redstone-Kabel, ohne Mechanismen.
+ButtonControl erlaubt es Spielern, **Türen, Eisentüren, Zauntore, Falltüren, Redstone- und Kupferlampen, Gitter, Creaking Heart, Spender/Werfer, Notenblöcke und Glocken** mit einem selbst hergestellten Controller zu steuern – ohne Redstone-Kabel, ohne Mechanismen.
 
 **Mögliche Controller-Typen:**
 - Holz- und Steinbuttons aller Arten
@@ -60,7 +60,11 @@ Folgende Blöcke können mit einem Controller verbunden werden:
 | Alle Holz-Falltüren | Öffnen / Schließen | |
 | **Eisenfalltür** | Öffnen / Schließen | Wie Eisentür, kein Redstone nötig |
 | Alle Zauntore | Öffnen / Schließen | |
-| Redstone-Lampe | Ein / Ausschalten | |
+| Redstone-Lampe + Kupferlampen | Ein / Ausschalten | Unterstützt normale, verwitterte und gewachste Kupferlampen |
+| Creaking Heart (Knarrherz) | Aktivieren / Deaktivieren | Bleibt aktiv bis manuell ausgeschaltet |
+| Gitter (`*_GRATE`) + Eisenstangen | Öffnen / Schließen | Öffnen = temporär frei (AIR), Schließen = Originalmaterial wird wiederhergestellt |
+| Spender (Dispenser) | Auslösen | Kann per Zeitplan als Show laufen |
+| Werfer (Dropper) | Auslösen | Kann per Zeitplan als Show laufen |
 | Notenblock | Klingelton abspielen | Instrument pro Spieler einstellbar |
 | Glocke | Läuten | |
 
@@ -128,7 +132,9 @@ Alle Rezepte folgen demselben Muster: **3× dasselbe Material in der mittleren S
 | Türen (inkl. Eisentür) | 20 |
 | Zauntore | 20 |
 | Falltüren (inkl. Eisen) | 20 |
-| Redstone-Lampen | 50 |
+| Redstone- und Kupferlampen | 50 |
+| Spender | 20 |
+| Werfer | 20 |
 | Notenblöcke | 10 |
 | Glocken | 5 |
 
@@ -245,6 +251,7 @@ Der Zeitplan erlaubt es, verbundene Blöcke **automatisch zu einer bestimmten In
 - Dorftor öffnet automatisch morgens um 07:00, schließt abends um 19:00
 - Laternenpfahl-Lampen schalten sich nachts ein, tagsüber aus
 - Geschäfts-Eingang öffnet nur zu "Öffnungszeiten"
+- Feuerwerk-Show startet abends automatisch und endet nachts (mit Werfern/Spendern)
 
 ### GUI öffnen
 Sieh den Controller an und tippe:
@@ -273,6 +280,8 @@ Sieh den Controller an und tippe:
 
 > ⚠️ Die Zeiten sind **Ingame-Zeiten** (ein Minecraft-Tag = 20 Minuten Echtzeit).
 > Beispiel: "07:00" = Minecraft-Sonnenaufgang, "19:00" = Sonnenuntergang.
+
+> Hinweis zu Werfer/Spender: Wenn ein Controller einen aktiven Zeitplan hat, lösen verbundene Werfer/Spender während des Zeitfensters automatisch in Intervallen aus.
 
 **Über Mitternacht:** Zeitpläne die über Mitternacht gehen (z.B. Öffnen 22:00, Schließen 04:00) werden korrekt erkannt.
 
@@ -402,6 +411,8 @@ max-noteblocks: 10     # Notenblöcke
 max-gates: 20          # Zauntore
 max-trapdoors: 20      # Holz- und Eisenfalltüren
 max-bells: 5           # Glocken
+max-dispensers: 20     # Spender
+max-droppers: 20       # Werfer
 
 # Notenblock-Einstellungen
 default-note: "PIANO"           # Standard-Instrument
@@ -412,6 +423,7 @@ double-note-delay-ms: 1000      # Abstand zwischen den Tönen (ms)
 motion-detection-radius: 5.0    # Erkennungsradius in Blöcken
 motion-close-delay-ms: 5000     # Verzögerung vor dem Schließen (ms)
 motion-trigger-cooldown-ms: 2000 # Mindestzeit zwischen zwei Auslösungen
+timed-container-interval-ticks: 40 # Intervall für Werfer/Spender im Zeitplan (20 Ticks = 1s)
 
 # Sounds beim Öffnen/Schließen
 sounds:
@@ -462,6 +474,9 @@ Diese Datei wird **automatisch** verwaltet und sollte nicht manuell bearbeitet w
 
 **❓ Der Zeitplan funktioniert nicht.**
 → Stelle sicher, dass der Zeitplan in der ScheduleGUI **aktiviert** ist (grüner Hebel, nicht Strauch). Öffne die GUI mit `/bc schedule` und prüfe den Ein/Aus-Status.
+
+**❓ Werfer/Spender schießen zu langsam oder zu schnell im Zeitplan.**
+→ Passe `timed-container-interval-ticks` in `config.yml` an und führe `/bc reload` aus.
 
 **❓ `/bc list` zeigt "Keine Blöcke verbunden".**
 → Entweder wurde der Controller noch nie mit Blöcken verbunden, oder alle verbundenen Blöcke wurden abgebaut (werden automatisch entfernt).
