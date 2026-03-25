@@ -68,12 +68,15 @@ public class ConfigManager {
         def(config, "max-gates",                 20);
         def(config, "max-trapdoors",             20);
         def(config, "max-bells",                  5);
+        def(config, "max-dispensers",            20);
+        def(config, "max-droppers",              20);
         def(config, "default-note",         "PIANO");
         def(config, "double-note-enabled",     true);
         def(config, "double-note-delay-ms",    1000);
         def(config, "motion-detection-radius",  5.0);
         def(config, "motion-close-delay-ms",   5000);
         def(config, "motion-trigger-cooldown-ms", 2000);
+        def(config, "timed-container-interval-ticks", 40);
 
         // Optionales MySQL-Backend
         def(config, "mysql.enabled", false);
@@ -122,9 +125,20 @@ public class ConfigManager {
         def(lang, "lampen-eingeschaltet",   "§aLampen wurden eingeschaltet.");
         def(lang, "lampen-ausgeschaltet",   "§cLampen wurden ausgeschaltet.");
         def(lang, "max-lampen-erreicht",    "§cMaximale Anzahl an Lampen erreicht.");
+        // Creaking Heart
+        def(lang, "creaking-heart-aktiviert",   "§aKnarrherz wurde aktiviert.");
+        def(lang, "creaking-heart-deaktiviert", "§cKnarrherz wurde deaktiviert.");
+        // Gitter
+        def(lang, "gitter-geoeffnet",           "§aGitter wurden geöffnet.");
+        def(lang, "gitter-geschlossen",         "§cGitter wurden geschlossen.");
         // Glocken
         def(lang, "glocke-gelaeutet",       "§aGlocke wurde geläutet.");
         def(lang, "max-glocken-erreicht",   "§cMaximale Anzahl an Glocken erreicht.");
+        // Spender / Werfer
+        def(lang, "spender-ausgeloest",     "§aSpender wurden ausgelöst.");
+        def(lang, "werfer-ausgeloest",      "§aWerfer wurden ausgelöst.");
+        def(lang, "max-spender-erreicht",   "§cMaximale Anzahl an Spendern erreicht.");
+        def(lang, "max-werfer-erreicht",    "§cMaximale Anzahl an Werfern erreicht.");
         // Notenblöcke
         def(lang, "notenblock-ausgeloest",      "§aNotenblock-Klingel wurde ausgelöst.");
         def(lang, "instrument-gesetzt",         "§aDein Instrument wurde auf %s gesetzt.");
@@ -179,6 +193,8 @@ public class ConfigManager {
     public int getMaxGates()       { return config.getInt("max-gates",      20); }
     public int getMaxTrapdoors()   { return config.getInt("max-trapdoors",  20); }
     public int getMaxBells()       { return config.getInt("max-bells",       5); }
+    public int getMaxDispensers()  { return config.getInt("max-dispensers", 20); }
+    public int getMaxDroppers()    { return config.getInt("max-droppers",   20); }
 
     public String getMessage(String key) {
         return lang.getString(key, "§cNachricht fehlt: " + key);

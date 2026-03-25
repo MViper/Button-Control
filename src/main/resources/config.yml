@@ -7,6 +7,8 @@ max-noteblocks: 10
 max-gates: 20
 max-trapdoors: 20
 max-bells: 5
+max-dispensers: 20
+max-droppers: 20
 
 # ── Notenblöcke ─────────────────────────────────────────────────────────────
 default-note: "PIANO"
@@ -19,6 +21,14 @@ motion-detection-radius: 5.0
 motion-close-delay-ms: 5000
 # Cooldown: wie lange nach dem Schließen der Sensor nicht erneut auslöst
 motion-trigger-cooldown-ms: 2000
+# Legacy-Fallback für ältere Zeitpläne ohne eigenen GUI-Delay-Wert
+# (20 Ticks = 1 Sekunde)
+timed-container-interval-ticks: 40
+# Standardwert für die Zeit zwischen einzelnen Abschüssen im Zeitplan
+# Wird verwendet, bis ein Controller in der GUI einen eigenen Wert speichert
+timed-container-shot-delay-ticks: 2
+# Standardmodus für Zeitplan-Werfer/Spender: simultaneous oder sequential
+timed-container-trigger-mode: simultaneous
 
 # ── Optionales MySQL-Backend ────────────────────────────────────────────────
 mysql:

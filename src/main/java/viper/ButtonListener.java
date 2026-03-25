@@ -83,9 +83,14 @@ public class ButtonListener implements Listener {
 
                     event.setCancelled(true);
                     List<String> connectedBlocks = dataManager.getConnectedBlocks(buttonId);
-                    if (connectedBlocks != null && !connectedBlocks.isEmpty()) {
+                    boolean hasConnectedBlocks = connectedBlocks != null && !connectedBlocks.isEmpty();
+                    boolean secretTriggered = plugin.triggerSecretWall(buttonId);
+
+                    if (hasConnectedBlocks) {
                         toggleConnectedBlocks(player, playerUUID, connectedBlocks);
-                    } else {
+                    }
+
+                    if (!hasConnectedBlocks && !secretTriggered) {
                         player.sendMessage(configManager.getMessage("keine-bloecke-verbunden"));
                     }
                 }
@@ -202,8 +207,12 @@ public class ButtonListener implements Listener {
         boolean anyIronDoorOpened = false, anyIronDoorClosed = false;
         boolean anyIronTrapOpened = false, anyIronTrapClosed = false;
         boolean anyLampOn = false, anyLampOff = false;
+        boolean anyGrateOpened = false, anyGrateClosed = false;
+        boolean anyCreakingHeartOn = false, anyCreakingHeartOff = false;
         boolean anyNoteBlockPlayed = false;
         boolean anyBellPlayed = false;
+        boolean anyDispenserTriggered = false;
+        boolean anyDropperTriggered = false;
 
         boolean soundsEnabled = configManager.getConfig().getBoolean("sounds.enabled", true);
 
@@ -268,18 +277,28 @@ public class ButtonListener implements Listener {
                     else                  { if (!wasOpen) anyTrapOpened = true; else anyTrapClosed = true; }
                 }
             }
-            // ── Redstone-Lampe ────────────────────────────────────────────
-            else if (mat == Material.REDSTONE_LAMP) {
-                Lightable lamp = (Lightable) targetBlock.getBlockData();
-                boolean wasLit = lamp.isLit();
-                lamp.setLit(!wasLit);
-                targetBlock.setBlockData(lamp);
-                if (soundsEnabled) {
-                    playConfigSound(location,
-                        wasLit ? "sounds.lamp-off" : "sounds.lamp-on",
-                        "BLOCK_LEVER_CLICK");
+            // ── Lampen (Redstone + Kupferlampen) ─────────────────────────
+            else if (isLamp(mat)) {
+                if (targetBlock.getBlockData() instanceof Lightable) {
+                    Lightable lamp = (Lightable) targetBlock.getBlockData();
+                    boolean wasLit = lamp.isLit();
+                    lamp.setLit(!wasLit);
+                    targetBlock.setBlockData(lamp);
+                    if (soundsEnabled) {
+                        playConfigSound(location,
+                            wasLit ? "sounds.lamp-off" : "sounds.lamp-on",
+                            "BLOCK_LEVER_CLICK");
+                    }
+                    if (!wasLit) anyLampOn = true; else anyLampOff = true;
                 }
-                if (!wasLit) anyLampOn = true; else anyLampOff = true;
+            }
+            // ── Gitter (alle *_GRATE + Eisenstangen) ─────────────────────
+            else if (plugin.isGrate(mat) || (mat == Material.AIR && plugin.isManagedOpenGrateLocation(locStr))) {
+                Boolean nowOpen = plugin.toggleGrate(targetBlock);
+                if (nowOpen != null) {
+                    if (nowOpen) anyGrateOpened = true;
+                    else anyGrateClosed = true;
+                }
             }
             // ── Notenblock ────────────────────────────────────────────────
             else if (mat == Material.NOTE_BLOCK) {
@@ -293,6 +312,27 @@ public class ButtonListener implements Listener {
             else if (mat == Material.BELL) {
                 targetBlock.getWorld().playSound(location, Sound.BLOCK_BELL_USE, 3.0f, 1.0f);
                 anyBellPlayed = true;
+            }
+            // ── Spender / Werfer ──────────────────────────────────────────
+            else if (mat == Material.DISPENSER) {
+                if (triggerContainer(targetBlock, "dispense")) {
+                    targetBlock.getWorld().playSound(location, Sound.BLOCK_DISPENSER_DISPENSE, 1.0f, 1.0f);
+                    anyDispenserTriggered = true;
+                }
+            }
+            else if (mat == Material.DROPPER) {
+                if (triggerContainer(targetBlock, "drop")) {
+                    targetBlock.getWorld().playSound(location, Sound.BLOCK_DISPENSER_DISPENSE, 1.0f, 1.0f);
+                    anyDropperTriggered = true;
+                }
+            }
+            // ── Creaking Heart ────────────────────────────────────────────
+            else if (isCreakingHeart(mat)) {
+                Boolean nowActive = plugin.togglePersistentCreakingHeart(targetBlock);
+                if (nowActive != null) {
+                    if (nowActive) anyCreakingHeartOn = true;
+                    else anyCreakingHeartOff = true;
+                }
             }
         }
 
@@ -309,8 +349,14 @@ public class ButtonListener implements Listener {
         if (anyTrapClosed)      player.sendMessage(configManager.getMessage("fallturen-geschlossen"));
         if (anyLampOn)          player.sendMessage(configManager.getMessage("lampen-eingeschaltet"));
         if (anyLampOff)         player.sendMessage(configManager.getMessage("lampen-ausgeschaltet"));
+        if (anyGrateOpened)     player.sendMessage(configManager.getMessage("gitter-geoeffnet"));
+        if (anyGrateClosed)     player.sendMessage(configManager.getMessage("gitter-geschlossen"));
+        if (anyCreakingHeartOn) player.sendMessage(configManager.getMessage("creaking-heart-aktiviert"));
+        if (anyCreakingHeartOff) player.sendMessage(configManager.getMessage("creaking-heart-deaktiviert"));
         if (anyNoteBlockPlayed) player.sendMessage(configManager.getMessage("notenblock-ausgeloest"));
         if (anyBellPlayed)      player.sendMessage(configManager.getMessage("glocke-gelaeutet"));
+        if (anyDispenserTriggered) player.sendMessage(configManager.getMessage("spender-ausgeloest"));
+        if (anyDropperTriggered)   player.sendMessage(configManager.getMessage("werfer-ausgeloest"));
     }
 
     /**
@@ -327,6 +373,17 @@ public class ButtonListener implements Listener {
                 Sound sound = Sound.valueOf(fallback.toUpperCase());
                 loc.getWorld().playSound(loc, sound, 1.0f, 1.0f);
             } catch (IllegalArgumentException ignored) { }
+        }
+    }
+
+    private boolean triggerContainer(Block block, String methodName) {
+        try {
+            Object state = block.getState();
+            java.lang.reflect.Method method = state.getClass().getMethod(methodName);
+            Object result = method.invoke(state);
+            return !(result instanceof Boolean) || (Boolean) result;
+        } catch (ReflectiveOperationException ignored) {
+            return false;
         }
     }
 
@@ -360,8 +417,8 @@ public class ButtonListener implements Listener {
                     >= configManager.getMaxTrapdoors()) {
                 player.sendMessage(configManager.getMessage("max-fallturen-erreicht")); return false;
             }
-        } else if (type == Material.REDSTONE_LAMP) {
-            if (connected.stream().filter(l -> getMaterialAt(l) == Material.REDSTONE_LAMP).count()
+        } else if (isLamp(type)) {
+            if (connected.stream().filter(l -> isLamp(getMaterialAt(l))).count()
                     >= configManager.getMaxLamps()) {
                 player.sendMessage(configManager.getMessage("max-lampen-erreicht")); return false;
             }
@@ -374,6 +431,16 @@ public class ButtonListener implements Listener {
             if (connected.stream().filter(l -> getMaterialAt(l) == Material.BELL).count()
                     >= configManager.getMaxBells()) {
                 player.sendMessage(configManager.getMessage("max-glocken-erreicht")); return false;
+            }
+        } else if (type == Material.DISPENSER) {
+            if (connected.stream().filter(l -> getMaterialAt(l) == Material.DISPENSER).count()
+                    >= configManager.getMaxDispensers()) {
+                player.sendMessage(configManager.getMessage("max-spender-erreicht")); return false;
+            }
+        } else if (type == Material.DROPPER) {
+            if (connected.stream().filter(l -> getMaterialAt(l) == Material.DROPPER).count()
+                    >= configManager.getMaxDroppers()) {
+                player.sendMessage(configManager.getMessage("max-werfer-erreicht")); return false;
             }
         }
         return true;
@@ -415,11 +482,20 @@ public class ButtonListener implements Listener {
     private boolean isDoor(Material m)      { return m.name().endsWith("_DOOR") && m != Material.IRON_DOOR; }
     private boolean isGate(Material m)      { return m.name().endsWith("_FENCE_GATE"); }
     private boolean isTrapdoor(Material m)  { return m.name().endsWith("_TRAPDOOR") && m != Material.IRON_TRAPDOOR; }
+    private boolean isLamp(Material m)      {
+        return m == Material.REDSTONE_LAMP
+            || "COPPER_BULB".equals(m.name())
+            || m.name().endsWith("_COPPER_BULB");
+    }
+    private boolean isCreakingHeart(Material m) { return "CREAKING_HEART".equals(m.name()); }
 
     private boolean isInteractableTarget(Material m) {
         return isDoor(m) || isGate(m) || isTrapdoor(m)
             || m == Material.IRON_DOOR || m == Material.IRON_TRAPDOOR
-            || m == Material.REDSTONE_LAMP || m == Material.NOTE_BLOCK || m == Material.BELL;
+            || isLamp(m) || plugin.isGrate(m)
+            || m == Material.NOTE_BLOCK || m == Material.BELL
+            || m == Material.DISPENSER || m == Material.DROPPER
+            || isCreakingHeart(m);
     }
 
     private Material getMaterialAt(String locString) {

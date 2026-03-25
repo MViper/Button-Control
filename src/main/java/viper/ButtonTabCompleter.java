@@ -15,7 +15,7 @@ public class ButtonTabCompleter implements TabCompleter {
 
     private final List<String> commands = Arrays.asList(
         "info", "reload", "note", "list", "rename", "schedule",
-        "trust", "untrust", "public", "private"
+        "trust", "untrust", "public", "private", "undo", "secret"
     );
 
     private final List<String> instruments = Arrays.asList(
@@ -44,6 +44,26 @@ public class ButtonTabCompleter implements TabCompleter {
                 case "rename":
                     completions.add("<Name>");
                     break;
+                case "secret":
+                    StringUtil.copyPartialMatches(args[1], Arrays.asList("select", "info", "add", "remove", "clear", "delay", "animation"), completions);
+                    break;
+            }
+        } else if (args.length == 3 && args[0].equalsIgnoreCase("secret") && args[1].equalsIgnoreCase("delay")) {
+            completions.add("3");
+            completions.add("5");
+            completions.add("10");
+            completions.add("30");
+            completions.add("60");
+        } else if (args.length == 3 && args[0].equalsIgnoreCase("secret") && args[1].equalsIgnoreCase("animation")) {
+            completions.add("instant");
+            completions.add("wave");
+            completions.add("reverse");
+            completions.add("center");
+        }
+
+        if (args.length == 2 && args[0].equalsIgnoreCase("secret")) {
+            if (completions.isEmpty()) {
+                StringUtil.copyPartialMatches(args[1], Arrays.asList("select", "info", "add", "remove", "clear", "delay", "animation"), completions);
             }
         }
 

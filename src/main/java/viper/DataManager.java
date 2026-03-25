@@ -96,24 +96,29 @@ public class DataManager {
         }
         // buttonId vor dem Löschen des Location-Eintrags ermitteln
         String buttonId = getButtonIdForPlacedController(location);
-        String ownerUUID = null;
         if (data.getConfigurationSection("players") != null) {
             for (String uuid : data.getConfigurationSection("players").getKeys(false)) {
                 String path = "players." + uuid + ".placed-controllers." + location;
                 if (data.contains(path)) {
                     data.set(path, null);
-                    ownerUUID = uuid;
                 }
             }
         }
-        // Alle zugehörigen Daten (Name, Status, Trust, Zeitplan, Verbindungen) bereinigen
+        // Alle zugehörigen Daten (Name, Status, Trust, Zeitplan, Verbindungen, Secret) bereinigen
         if (buttonId != null) {
             data.set("names." + buttonId, null);
             data.set("public-status." + buttonId, null);
             data.set("trust." + buttonId, null);
             data.set("schedules." + buttonId, null);
-            if (ownerUUID != null) {
-                data.set("players." + ownerUUID + ".buttons." + buttonId, null);
+
+            // Secret-Wall-Daten ebenfalls entfernen
+            data.set("secret-walls." + buttonId, null);
+
+            // Sicherheitshalber bei ALLEN Spielern den Button-Eintrag löschen
+            if (data.getConfigurationSection("players") != null) {
+                for (String uuid : data.getConfigurationSection("players").getKeys(false)) {
+                    data.set("players." + uuid + ".buttons." + buttonId, null);
+                }
             }
         }
         removeMotionSensorSettings(location);
@@ -238,6 +243,34 @@ public class DataManager {
         return data.getLong("schedules." + buttonId + ".close-time", -1);
     }
 
+    public void setScheduleShotDelayTicks(String buttonId, int ticks) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setScheduleShotDelayTicks(buttonId, ticks);
+            return;
+        }
+        data.set("schedules." + buttonId + ".shot-delay-ticks", ticks);
+        saveData();
+    }
+
+    public int getScheduleShotDelayTicks(String buttonId) {
+        if (mySQLStorage != null) return mySQLStorage.getScheduleShotDelayTicks(buttonId);
+        return data.getInt("schedules." + buttonId + ".shot-delay-ticks", -1);
+    }
+
+    public void setScheduleTriggerMode(String buttonId, String mode) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setScheduleTriggerMode(buttonId, mode);
+            return;
+        }
+        data.set("schedules." + buttonId + ".trigger-mode", mode);
+        saveData();
+    }
+
+    public String getScheduleTriggerMode(String buttonId) {
+        if (mySQLStorage != null) return mySQLStorage.getScheduleTriggerMode(buttonId);
+        return data.getString("schedules." + buttonId + ".trigger-mode");
+    }
+
     /** Entfernt den kompletten Zeitplan für einen Controller. */
     public void clearSchedule(String buttonId) {
         if (mySQLStorage != null) {
@@ -346,6 +379,61 @@ public class DataManager {
             return;
         }
         data.set("motion-sensors." + location, null);
+        saveData();
+    }
+
+    // -----------------------------------------------------------------------
+    //  Secret-Wall (Geheimwand)
+    // -----------------------------------------------------------------------
+
+    public void setSecretBlocks(String buttonId, List<String> blocks) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setSecretBlocks(buttonId, blocks);
+            return;
+        }
+        data.set("secret-walls." + buttonId + ".blocks", blocks);
+        saveData();
+    }
+
+    public List<String> getSecretBlocks(String buttonId) {
+        if (mySQLStorage != null) return mySQLStorage.getSecretBlocks(buttonId);
+        return data.getStringList("secret-walls." + buttonId + ".blocks");
+    }
+
+    public void setSecretRestoreDelayMs(String buttonId, long delayMs) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setSecretRestoreDelayMs(buttonId, delayMs);
+            return;
+        }
+        data.set("secret-walls." + buttonId + ".delay-ms", delayMs);
+        saveData();
+    }
+
+    public long getSecretRestoreDelayMs(String buttonId) {
+        if (mySQLStorage != null) return mySQLStorage.getSecretRestoreDelayMs(buttonId);
+        return data.getLong("secret-walls." + buttonId + ".delay-ms", 5000L);
+    }
+
+    public void setSecretAnimation(String buttonId, String animation) {
+        if (mySQLStorage != null) {
+            mySQLStorage.setSecretAnimation(buttonId, animation);
+            return;
+        }
+        data.set("secret-walls." + buttonId + ".animation", animation);
+        saveData();
+    }
+
+    public String getSecretAnimation(String buttonId) {
+        if (mySQLStorage != null) return mySQLStorage.getSecretAnimation(buttonId);
+        return data.getString("secret-walls." + buttonId + ".animation", "wave");
+    }
+
+    public void clearSecret(String buttonId) {
+        if (mySQLStorage != null) {
+            mySQLStorage.clearSecret(buttonId);
+            return;
+        }
+        data.set("secret-walls." + buttonId, null);
         saveData();
     }
 

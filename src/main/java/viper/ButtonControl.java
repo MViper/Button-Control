@@ -1,11 +1,13 @@
 package viper;
 
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.Lightable;
 import org.bukkit.block.data.type.NoteBlock;
 import org.bukkit.command.Command;
@@ -24,11 +26,16 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 public class ButtonControl extends JavaPlugin {
+    private static final String TIMED_CONTAINER_MODE_SIMULTANEOUS = "simultaneous";
+    private static final String TIMED_CONTAINER_MODE_SEQUENTIAL = "sequential";
+
     private ConfigManager configManager;
     private DataManager dataManager;
 
@@ -41,6 +48,27 @@ public class ButtonControl extends JavaPlugin {
 
     // Actionbar-Status pro Spieler für die Namensanzeige
     private final Map<java.util.UUID, String> lastControllerActionbar = new HashMap<>();
+
+    // Undo-System: letzte Aktion pro Controller (wird nach 5 Minuten gelöscht)
+    private final Map<String, UndoAction> lastActions = new HashMap<>();
+
+    // Secret-Wall Runtime (offene Wände + Originalzustand)
+    private final Map<String, List<SecretBlockSnapshot>> openSecretWalls = new HashMap<>();
+
+    // Knarrherz-Override: aktivierte Herzen werden zyklisch auf "active=true" gehalten
+    private final Set<String> forcedActiveCreakingHearts = new HashSet<>();
+
+    // Geöffnete Gitter (AIR) mit Originalmaterial für die Wiederherstellung
+    private final Map<String, Material> openGrates = new HashMap<>();
+
+    // Laufende Zeitplan-Shows für Werfer/Spender pro Controller
+    private final Map<String, Integer> timedContainerTasks = new HashMap<>();
+    private final Map<String, Integer> timedContainerTaskShotDelays = new HashMap<>();
+    private final Map<String, String> timedContainerTaskModes = new HashMap<>();
+    private final Map<String, Integer> timedContainerNextIndices = new HashMap<>();
+
+    // Secret-Editor: Spieler -> ausgewählter Controller
+    private final Map<java.util.UUID, String> selectedSecretController = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -89,13 +117,20 @@ public class ButtonControl extends JavaPlugin {
         getServer().getScheduler().runTaskTimer(this, this::checkDaylightSensors,  0L, 20L * 10);
         getServer().getScheduler().runTaskTimer(this, this::checkMotionSensors,    0L, 10L);
         getServer().getScheduler().runTaskTimer(this, this::checkTimedControllers, 0L, 20L * 5);
+        getServer().getScheduler().runTaskTimer(this, this::enforceCreakingHeartStates, 1L, 1L);
         getServer().getScheduler().runTaskTimer(this, this::updateControllerNameActionBar, 0L, 5L);
+
+        // Undo-Actions nach 5 Minuten aufräumen
+        getServer().getScheduler().runTaskTimer(this, this::cleanupOldUndoActions, 0L, 20L * 60 * 5);
 
         getLogger().info("ButtonControl v" + getDescription().getVersion() + " wurde erfolgreich aktiviert!");
     }
 
     @Override
     public void onDisable() {
+        stopAllTimedContainerTasks();
+        openGrates.clear();
+        forcedActiveCreakingHearts.clear();
         if (dataManager != null) {
             dataManager.shutdown();
         }
@@ -237,11 +272,18 @@ public class ButtonControl extends JavaPlugin {
                 Location tl = parseLocation(ts);
                 if (tl == null) continue;
                 Block tb = tl.getBlock();
-                if (tb.getType() == Material.REDSTONE_LAMP) {
+                if (isLamp(tb.getType()) && tb.getBlockData() instanceof Lightable) {
                     Lightable lamp = (Lightable) tb.getBlockData();
                     lamp.setLit(!isDay);
                     tb.setBlockData(lamp);
                 }
+            }
+
+            // Secret Wall: bei Tag öffnen, bei Nacht schließen
+            if (isDay) {
+                triggerSecretWall(buttonId, false);
+            } else {
+                closeSecretWall(buttonId);
             }
         }
     }
@@ -258,13 +300,20 @@ public class ButtonControl extends JavaPlugin {
      * Anzeige: ticksToTime() wandelt in "HH:MM" um (Tag beginnt um 06:00).
      */
     public void checkTimedControllers() {
+        Set<String> activeScheduleButtons = new HashSet<>();
+
         for (String controllerLoc : dataManager.getAllPlacedControllers()) {
             String buttonId = dataManager.getButtonIdForPlacedController(controllerLoc);
             if (buttonId == null) continue;
 
             long openTime  = dataManager.getScheduleOpenTime(buttonId);
             long closeTime = dataManager.getScheduleCloseTime(buttonId);
-            if (openTime < 0 || closeTime < 0) continue;
+            if (openTime < 0 || closeTime < 0) {
+                stopTimedContainerTask(buttonId);
+                continue;
+            }
+
+            activeScheduleButtons.add(buttonId);
 
             Location loc = parseLocation(controllerLoc);
             if (loc == null) continue;
@@ -281,13 +330,159 @@ public class ButtonControl extends JavaPlugin {
             }
 
             Boolean lastState = timedControllerLastState.get(controllerLoc);
+            List<String> connected = dataManager.getConnectedBlocks(buttonId);
+            if (connected != null && !connected.isEmpty()) {
+                updateTimedContainerAutomation(buttonId, connected, shouldBeOpen);
+            } else {
+                stopTimedContainerTask(buttonId);
+            }
+
             if (lastState != null && lastState == shouldBeOpen) continue;
 
             timedControllerLastState.put(controllerLoc, shouldBeOpen);
-            List<String> connected = dataManager.getConnectedBlocks(buttonId);
             if (connected != null && !connected.isEmpty()) {
                 setOpenables(connected, shouldBeOpen);
             }
+        }
+
+        // Falls Zeitpläne entfernt wurden, zugehörige Show-Tasks sauber stoppen.
+        List<String> inactiveTaskButtons = new ArrayList<>(timedContainerTasks.keySet());
+        for (String buttonId : inactiveTaskButtons) {
+            if (!activeScheduleButtons.contains(buttonId)) {
+                stopTimedContainerTask(buttonId);
+            }
+        }
+    }
+
+    private void updateTimedContainerAutomation(String buttonId, List<String> connected, boolean activeWindow) {
+        if (!containsTimedContainer(connected)) {
+            stopTimedContainerTask(buttonId);
+            return;
+        }
+
+        if (!activeWindow) {
+            stopTimedContainerTask(buttonId);
+            return;
+        }
+
+        int configuredDelay = dataManager.getScheduleShotDelayTicks(buttonId);
+        int shotDelay = configuredDelay >= 0
+            ? Math.max(0, configuredDelay)
+            : Math.max(0, configManager.getConfig().getInt(
+                "timed-container-shot-delay-ticks",
+                configManager.getConfig().getInt("timed-container-interval-ticks", 40)));
+        String configuredMode = normalizeTimedContainerMode(dataManager.getScheduleTriggerMode(buttonId));
+        String taskMode = configuredMode != null
+            ? configuredMode
+            : normalizeTimedContainerMode(configManager.getConfig().getString(
+                "timed-container-trigger-mode",
+                TIMED_CONTAINER_MODE_SIMULTANEOUS));
+        int taskPeriod = Math.max(1, shotDelay);
+
+        Integer existingTaskId = timedContainerTasks.get(buttonId);
+        if (existingTaskId != null) {
+            Integer existingDelay = timedContainerTaskShotDelays.get(buttonId);
+            String existingMode = timedContainerTaskModes.get(buttonId);
+            if (existingDelay != null && existingDelay == taskPeriod && taskMode.equals(existingMode)) {
+                return;
+            }
+            stopTimedContainerTask(buttonId);
+        }
+
+        int taskId = getServer().getScheduler().scheduleSyncRepeatingTask(this, () -> {
+            List<String> latestConnected = dataManager.getConnectedBlocks(buttonId);
+            List<String> timedContainers = getTimedContainerLocations(latestConnected);
+            if (timedContainers.isEmpty()) {
+                stopTimedContainerTask(buttonId);
+                return;
+            }
+
+            if (TIMED_CONTAINER_MODE_SEQUENTIAL.equals(taskMode)) {
+                int nextIndex = timedContainerNextIndices.getOrDefault(buttonId, 0);
+                if (nextIndex >= timedContainers.size()) nextIndex = 0;
+
+                String locStr = timedContainers.get(nextIndex);
+                Location l = parseLocation(locStr);
+                if (l != null) {
+                    Block b = l.getBlock();
+                    if (b.getType() == Material.DISPENSER) {
+                        triggerContainer(b, "dispense");
+                    } else if (b.getType() == Material.DROPPER) {
+                        triggerContainer(b, "drop");
+                    }
+                }
+                timedContainerNextIndices.put(buttonId, (nextIndex + 1) % timedContainers.size());
+            } else {
+                for (String locStr : timedContainers) {
+                    Location l = parseLocation(locStr);
+                    if (l == null) continue;
+
+                    Block b = l.getBlock();
+                    if (b.getType() == Material.DISPENSER) {
+                        triggerContainer(b, "dispense");
+                    } else if (b.getType() == Material.DROPPER) {
+                        triggerContainer(b, "drop");
+                    }
+                }
+            }
+        }, 0L, taskPeriod);
+
+        timedContainerTasks.put(buttonId, taskId);
+        timedContainerTaskShotDelays.put(buttonId, taskPeriod);
+        timedContainerTaskModes.put(buttonId, taskMode);
+        timedContainerNextIndices.put(buttonId, 0);
+    }
+
+    private boolean containsTimedContainer(List<String> connected) {
+        return !getTimedContainerLocations(connected).isEmpty();
+    }
+
+    private List<String> getTimedContainerLocations(List<String> connected) {
+        List<String> timedContainers = new ArrayList<>();
+        for (String locStr : connected) {
+            Location l = parseLocation(locStr);
+            if (l == null) continue;
+            Material m = l.getBlock().getType();
+            if (m == Material.DISPENSER || m == Material.DROPPER) {
+                timedContainers.add(locStr);
+            }
+        }
+        return timedContainers;
+    }
+
+    private String normalizeTimedContainerMode(String mode) {
+        if (mode == null) return null;
+        String normalized = mode.trim().toLowerCase(Locale.ROOT);
+        if (TIMED_CONTAINER_MODE_SEQUENTIAL.equals(normalized)) return TIMED_CONTAINER_MODE_SEQUENTIAL;
+        return TIMED_CONTAINER_MODE_SIMULTANEOUS;
+    }
+
+    private void stopTimedContainerTask(String buttonId) {
+        Integer taskId = timedContainerTasks.remove(buttonId);
+        if (taskId != null) getServer().getScheduler().cancelTask(taskId);
+        timedContainerTaskShotDelays.remove(buttonId);
+        timedContainerTaskModes.remove(buttonId);
+        timedContainerNextIndices.remove(buttonId);
+    }
+
+    private void stopAllTimedContainerTasks() {
+        for (Integer taskId : timedContainerTasks.values()) {
+            getServer().getScheduler().cancelTask(taskId);
+        }
+        timedContainerTasks.clear();
+        timedContainerTaskShotDelays.clear();
+        timedContainerTaskModes.clear();
+        timedContainerNextIndices.clear();
+    }
+
+    private boolean triggerContainer(Block block, String methodName) {
+        try {
+            Object state = block.getState();
+            java.lang.reflect.Method method = state.getClass().getMethod(methodName);
+            Object result = method.invoke(state);
+            return !(result instanceof Boolean) || (Boolean) result;
+        } catch (ReflectiveOperationException ignored) {
+            return false;
         }
     }
 
@@ -388,18 +583,23 @@ public class ButtonControl extends JavaPlugin {
             }
 
             List<String> connected = dataManager.getConnectedBlocks(buttonId);
-            if (connected == null || connected.isEmpty()) continue;
+            boolean hasConnected = connected != null && !connected.isEmpty();
+            List<String> secretBlocks = dataManager.getSecretBlocks(buttonId);
+            boolean hasSecret = secretBlocks != null && !secretBlocks.isEmpty();
+            if (!hasConnected && !hasSecret) continue;
 
             if (detected) {
                 if (!activeSensors.contains(controllerLoc)) {
-                    setOpenables(connected, true);
+                    if (hasConnected) setOpenables(connected, true);
+                    triggerSecretWall(buttonId, false);
                     activeSensors.add(controllerLoc);
                 }
                 lastMotionDetections.put(controllerLoc, now);
             } else {
                 Long last = lastMotionDetections.get(controllerLoc);
                 if (last != null && now - last >= delay) {
-                    setOpenables(connected, false);
+                    if (hasConnected) setOpenables(connected, false);
+                    closeSecretWall(buttonId);
                     lastMotionDetections.remove(controllerLoc);
                     activeSensors.remove(controllerLoc);
                 }
@@ -416,6 +616,8 @@ public class ButtonControl extends JavaPlugin {
                 org.bukkit.block.data.Openable o = (org.bukkit.block.data.Openable) tb.getBlockData();
                 o.setOpen(open);
                 tb.setBlockData(o);
+            } else if (isGrate(tb.getType()) || (tb.getType() == Material.AIR && openGrates.containsKey(locStr))) {
+                setGrateOpenState(tb, locStr, open);
             }
         }
     }
@@ -429,7 +631,7 @@ public class ButtonControl extends JavaPlugin {
         if (!command.getName().equalsIgnoreCase("bc")) return false;
 
         if (args.length == 0) {
-            sender.sendMessage("§6[BC] §7/bc <info|reload|note|list|rename|schedule|trust|untrust|public|private>");
+            sender.sendMessage("§6[BC] §7/bc <info|reload|note|list|rename|schedule|trust|untrust|public|private|undo|secret>");
             return true;
         }
 
@@ -450,7 +652,10 @@ public class ButtonControl extends JavaPlugin {
             }
             configManager.reloadConfig();
             dataManager.reloadData();
+            stopAllTimedContainerTasks();
             timedControllerLastState.clear();
+            openGrates.clear();
+            forcedActiveCreakingHearts.clear();
             clearAllControllerActionBars();
             sender.sendMessage(configManager.getMessage("konfiguration-neugeladen"));
             return true;
@@ -477,9 +682,13 @@ public class ButtonControl extends JavaPlugin {
         }
         Player player = (Player) sender;
 
+        if (sub.equals("secret")) {
+            return handleSecretCommand(player, args);
+        }
+
         if (sub.equals("list") || sub.equals("rename") || sub.equals("schedule")
                 || sub.equals("trust") || sub.equals("untrust")
-                || sub.equals("public") || sub.equals("private")) {
+            || sub.equals("public") || sub.equals("private") || sub.equals("undo")) {
 
             Block target = player.getTargetBlockExact(5);
             if (!isValidController(target)) {
@@ -502,12 +711,18 @@ public class ButtonControl extends JavaPlugin {
                     break;
 
                 case "rename":
-                    if (!isOwner && !isAdmin) { player.sendMessage(configManager.getMessage("nur-besitzer-abbauen")); return true; }
+                    if (!isOwner && !isAdmin) { 
+                        player.sendMessage("§c✖ Nur der Besitzer oder Admins können das tun."); 
+                        return true; 
+                    }
                     if (args.length < 2) { player.sendMessage("§7/bc rename <Name>"); return true; }
+                    String oldRename = dataManager.getControllerName(buttonId);
                     String newName = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
                     if (newName.length() > 32) { player.sendMessage("§cName zu lang (max. 32 Zeichen)."); return true; }
-                    dataManager.setControllerName(buttonId, newName);
-                    player.sendMessage(String.format(configManager.getMessage("controller-umbenannt"), newName));
+                    String coloredName = ChatColor.translateAlternateColorCodes('&', newName);
+                    dataManager.setControllerName(buttonId, coloredName);
+                    saveUndoAction(buttonId, new UndoAction(UndoAction.Type.RENAME, oldRename, coloredName));
+                    player.sendMessage(String.format(configManager.getMessage("controller-umbenannt"), coloredName));
                     break;
 
                 case "schedule":
@@ -516,30 +731,61 @@ public class ButtonControl extends JavaPlugin {
                     break;
 
                 case "trust":
-                    if (!isOwner && !isAdmin) { player.sendMessage(configManager.getMessage("nur-besitzer-abbauen")); return true; }
+                    if (!isOwner && !isAdmin) { 
+                        player.sendMessage("§c✖ Nur der Besitzer oder Admins können das tun."); 
+                        return true; 
+                    }
                     if (args.length < 2) { player.sendMessage("§7/bc trust <Spieler>"); return true; }
                     org.bukkit.OfflinePlayer tp = Bukkit.getOfflinePlayer(args[1]);
                     if (!tp.hasPlayedBefore() && !tp.isOnline()) {
                         player.sendMessage(configManager.getMessage("spieler-nicht-gefunden")); return true;
                     }
                     dataManager.addTrustedPlayer(buttonId, tp.getUniqueId());
+                    saveUndoAction(buttonId, new UndoAction(UndoAction.Type.TRUST_ADD, tp.getUniqueId().toString(), null));
                     player.sendMessage(String.format(configManager.getMessage("trust-hinzugefuegt"), args[1]));
                     break;
 
                 case "untrust":
-                    if (!isOwner && !isAdmin) { player.sendMessage(configManager.getMessage("nur-besitzer-abbauen")); return true; }
+                    if (!isOwner && !isAdmin) { 
+                        player.sendMessage("§c✖ Nur der Besitzer oder Admins können das tun."); 
+                        return true; 
+                    }
                     if (args.length < 2) { player.sendMessage("§7/bc untrust <Spieler>"); return true; }
-                    dataManager.removeTrustedPlayer(buttonId, Bukkit.getOfflinePlayer(args[1]).getUniqueId());
+                    org.bukkit.OfflinePlayer untp = Bukkit.getOfflinePlayer(args[1]);
+                    java.util.UUID uuid = untp.getUniqueId();
+                    dataManager.removeTrustedPlayer(buttonId, uuid);
+                    saveUndoAction(buttonId, new UndoAction(UndoAction.Type.TRUST_REMOVE, uuid.toString(), null));
                     player.sendMessage(String.format(configManager.getMessage("trust-entfernt"), args[1]));
                     break;
 
                 default: // public / private
-                    if (!isOwner && !isAdmin) { player.sendMessage(configManager.getMessage("nur-besitzer-abbauen")); return true; }
+                    if (!isOwner && !isAdmin) { 
+                        player.sendMessage("§c✖ Nur der Besitzer oder Admins können das tun."); 
+                        return true; 
+                    }
                     boolean pub = sub.equals("public");
+                    boolean oldStatus = dataManager.isPublic(buttonId);
                     dataManager.setPublic(buttonId, pub);
+                    saveUndoAction(buttonId, new UndoAction(pub ? UndoAction.Type.PUBLIC : UndoAction.Type.PRIVATE, 
+                        String.valueOf(oldStatus), String.valueOf(pub)));
                     player.sendMessage(String.format(configManager.getMessage("status-geandert"),
                         pub ? "§aÖffentlich" : "§cPrivat"));
                     break;
+
+                case "undo":
+                    if (lastActions.containsKey(buttonId)) {
+                        UndoAction action = lastActions.get(buttonId);
+                        boolean canUndo = dataManager.isOwner(buttonId, player.getUniqueId()) || player.hasPermission("buttoncontrol.admin");
+                        if (!canUndo) {
+                            player.sendMessage("§c✖ Du kannst nur Aktionen deiner eigenen Controller rückgängig machen.");
+                            return true;
+                        }
+                        undoAction(buttonId, action, player);
+                    } else {
+                        player.sendMessage("§c✖ Keine Aktion zum Rückgängigmachen für diesen Controller.");
+                    }
+                    break;
+
             }
         }
         return true;
@@ -609,6 +855,113 @@ public class ButtonControl extends JavaPlugin {
             || m.name().endsWith("_CARPET");
     }
 
+    private boolean isLamp(Material m) {
+        return m == Material.REDSTONE_LAMP
+            || "COPPER_BULB".equals(m.name())
+            || m.name().endsWith("_COPPER_BULB");
+    }
+
+    public boolean isGrate(Material m) {
+        return m == Material.IRON_BARS || m.name().endsWith("_GRATE");
+    }
+
+    public boolean isManagedOpenGrateLocation(String locStr) {
+        return openGrates.containsKey(locStr);
+    }
+
+    public Boolean toggleGrate(Block block) {
+        if (block == null) return null;
+
+        String locStr = toLoc(block);
+        Material type = block.getType();
+
+        if (isGrate(type)) {
+            openGrates.put(locStr, type);
+            block.setType(Material.AIR, false);
+            return true;
+        }
+
+        if (type == Material.AIR) {
+            Material original = openGrates.get(locStr);
+            if (original != null) {
+                block.setType(original, false);
+                openGrates.remove(locStr);
+                return false;
+            }
+        }
+
+        return null;
+    }
+
+    private void setGrateOpenState(Block block, String locStr, boolean open) {
+        if (open) {
+            if (isGrate(block.getType())) {
+                openGrates.put(locStr, block.getType());
+                block.setType(Material.AIR, false);
+            }
+            return;
+        }
+
+        Material original = openGrates.get(locStr);
+        if (original != null) {
+            block.setType(original, false);
+            openGrates.remove(locStr);
+        }
+    }
+
+    private boolean isCreakingHeart(Material m) {
+        return "CREAKING_HEART".equals(m.name());
+    }
+
+    public Boolean togglePersistentCreakingHeart(Block block) {
+        if (block == null || !isCreakingHeart(block.getType())) return null;
+
+        String loc = toLoc(block);
+        boolean targetActive = !forcedActiveCreakingHearts.contains(loc);
+        if (!applyCreakingHeartActive(block, targetActive)) return null;
+
+        if (targetActive) forcedActiveCreakingHearts.add(loc);
+        else forcedActiveCreakingHearts.remove(loc);
+
+        return targetActive;
+    }
+
+    private void enforceCreakingHeartStates() {
+        if (forcedActiveCreakingHearts.isEmpty()) return;
+
+        java.util.Iterator<String> it = forcedActiveCreakingHearts.iterator();
+        while (it.hasNext()) {
+            String loc = it.next();
+            Location l = parseLocation(loc);
+            if (l == null) {
+                it.remove();
+                continue;
+            }
+
+            Block block = l.getBlock();
+            if (!isCreakingHeart(block.getType())) {
+                it.remove();
+                continue;
+            }
+
+            if (!applyCreakingHeartActive(block, true)) {
+                it.remove();
+            }
+        }
+    }
+
+    private boolean applyCreakingHeartActive(Block block, boolean active) {
+        org.bukkit.block.data.BlockData data = block.getBlockData();
+        try {
+            java.lang.reflect.Method setActive = data.getClass().getMethod("setActive", boolean.class);
+            setActive.invoke(data, active);
+            block.setBlockData(data);
+            return true;
+        } catch (ReflectiveOperationException ignored) {
+            return false;
+        }
+    }
+
     public String toLoc(Block b) {
         return b.getWorld().getName() + "," + b.getX() + "," + b.getY() + "," + b.getZ();
     }
@@ -650,4 +1003,453 @@ public class ButtonControl extends JavaPlugin {
 
     public ConfigManager getConfigManager() { return configManager; }
     public DataManager   getDataManager()   { return dataManager; }
+
+    private boolean handleSecretCommand(Player player, String[] args) {
+        if (args.length < 2) {
+            player.sendMessage("§7/bc secret <select|info|add|remove|clear|delay|animation>");
+            return true;
+        }
+
+        String mode = args[1].toLowerCase();
+        String buttonId = resolveSecretController(player);
+
+        if (mode.equals("select")) {
+            Block target = player.getTargetBlockExact(5);
+            if (!isValidController(target)) {
+                player.sendMessage(configManager.getMessage("kein-controller-im-blick"));
+                return true;
+            }
+            String targetLoc = toLoc(target);
+            String targetButtonId = dataManager.getButtonIdForLocation(targetLoc);
+            if (targetButtonId == null) {
+                player.sendMessage(configManager.getMessage("keine-bloecke-verbunden"));
+                return true;
+            }
+            boolean isAdmin = player.hasPermission("buttoncontrol.admin");
+            boolean isOwner = dataManager.isOwner(targetButtonId, player.getUniqueId());
+            if (!isOwner && !isAdmin) {
+                player.sendMessage("§c✖ Nur der Besitzer oder Admins können Secret-Türen verwalten.");
+                return true;
+            }
+            selectedSecretController.put(player.getUniqueId(), targetButtonId);
+            player.sendMessage("§6[Secret] §7Controller ausgewählt. Jetzt auf Wandblock schauen + /bc secret add");
+            return true;
+        }
+
+        if (buttonId == null) {
+            player.sendMessage("§c✖ Kein Controller ausgewählt. Schau auf den Controller und nutze §7/bc secret select§c.");
+            return true;
+        }
+
+        boolean isAdmin = player.hasPermission("buttoncontrol.admin");
+        boolean isOwner = dataManager.isOwner(buttonId, player.getUniqueId());
+        if (!isOwner && !isAdmin) {
+            player.sendMessage("§c✖ Nur der Besitzer oder Admins können Secret-Türen verwalten.");
+            return true;
+        }
+
+        if (mode.equals("info")) {
+            List<String> sb = dataManager.getSecretBlocks(buttonId);
+            long delayMs = dataManager.getSecretRestoreDelayMs(buttonId);
+            String animation = normalizeSecretAnimation(dataManager.getSecretAnimation(buttonId));
+            player.sendMessage("§6[Secret] §7Blöcke: §f" + sb.size() + " §8| §7Delay: §f" + (delayMs / 1000.0) + "s");
+            player.sendMessage("§6[Secret] §7Animation: §f" + animation);
+            return true;
+        }
+
+        if (mode.equals("clear")) {
+            dataManager.clearSecret(buttonId);
+            closeSecretWall(buttonId);
+            player.sendMessage("§6[Secret] §7Alle Secret-Blöcke entfernt.");
+            return true;
+        }
+
+        if (mode.equals("delay")) {
+            if (args.length < 3) {
+                player.sendMessage("§7/bc secret delay <sekunden>");
+                return true;
+            }
+            try {
+                int sec = Integer.parseInt(args[2]);
+                if (sec < 1 || sec > 300) {
+                    player.sendMessage("§c✖ Delay muss zwischen 1 und 300 Sekunden liegen.");
+                    return true;
+                }
+                dataManager.setSecretRestoreDelayMs(buttonId, sec * 1000L);
+                player.sendMessage("§6[Secret] §7Wiederherstellung: §f" + sec + "s");
+            } catch (NumberFormatException e) {
+                player.sendMessage("§c✖ Ungültige Zahl.");
+            }
+            return true;
+        }
+
+        if (mode.equals("animation")) {
+            if (args.length < 3) {
+                player.sendMessage("§7/bc secret animation <instant|wave|reverse|center>");
+                return true;
+            }
+            String animation = normalizeSecretAnimation(args[2]);
+            if (!isValidSecretAnimation(animation)) {
+                player.sendMessage("§c✖ Nutze: instant, wave, reverse oder center");
+                return true;
+            }
+            dataManager.setSecretAnimation(buttonId, animation);
+            player.sendMessage("§6[Secret] §7Animation gesetzt: §f" + animation);
+            return true;
+        }
+
+        Block wallTarget = player.getTargetBlockExact(6);
+        if (wallTarget == null || wallTarget.getType() == Material.AIR) {
+            player.sendMessage("§c✖ Schau auf einen Block innerhalb von 6 Blöcken.");
+            return true;
+        }
+
+        String wallLoc = toLoc(wallTarget);
+        List<String> secretBlocks = new ArrayList<>(dataManager.getSecretBlocks(buttonId));
+
+        if (mode.equals("add")) {
+            if (isUnsafeSecretBlock(wallTarget)) {
+                player.sendMessage("§c✖ Dieser Block trägt/enthält einen Controller oder Schalter. Nicht als Secret-Block erlaubt.");
+                return true;
+            }
+            if (secretBlocks.contains(wallLoc)) {
+                player.sendMessage("§c✖ Dieser Block ist bereits als Secret-Block gesetzt.");
+                return true;
+            }
+            secretBlocks.add(wallLoc);
+            dataManager.setSecretBlocks(buttonId, secretBlocks);
+            player.sendMessage("§6[Secret] §7Block hinzugefügt. §8(" + secretBlocks.size() + ")");
+            return true;
+        }
+
+        if (mode.equals("remove")) {
+            if (!secretBlocks.remove(wallLoc)) {
+                player.sendMessage("§c✖ Dieser Block ist kein Secret-Block.");
+                return true;
+            }
+            dataManager.setSecretBlocks(buttonId, secretBlocks);
+            player.sendMessage("§6[Secret] §7Block entfernt. §8(" + secretBlocks.size() + ")");
+            return true;
+        }
+
+        player.sendMessage("§7/bc secret <select|info|add|remove|clear|delay|animation>");
+        return true;
+    }
+
+    private String resolveSecretController(Player player) {
+        Block target = player.getTargetBlockExact(5);
+        if (isValidController(target)) {
+            String id = dataManager.getButtonIdForLocation(toLoc(target));
+            if (id != null) {
+                selectedSecretController.put(player.getUniqueId(), id);
+                return id;
+            }
+        }
+        return selectedSecretController.get(player.getUniqueId());
+    }
+
+    private boolean isUnsafeSecretBlock(Block wallBlock) {
+        String wallLoc = toLoc(wallBlock);
+        for (String controllerLoc : dataManager.getAllPlacedControllers()) {
+            Location l = parseLocation(controllerLoc);
+            if (l == null) continue;
+            Block controller = l.getBlock();
+
+            // Controller selbst nie entfernen
+            if (controllerLoc.equals(wallLoc)) return true;
+
+            // Trägerblock des Controllers nie entfernen
+            Block support = getSupportBlock(controller);
+            if (support != null && toLoc(support).equals(wallLoc)) return true;
+        }
+        return false;
+    }
+
+    private Block getSupportBlock(Block controller) {
+        Material m = controller.getType();
+
+        // Aufliegende Controller: Teppich / Tageslichtsensor / Tripwire Hook
+        if (m.name().endsWith("_CARPET") || m == Material.DAYLIGHT_DETECTOR || m == Material.TRIPWIRE_HOOK) {
+            return controller.getRelative(BlockFace.DOWN);
+        }
+
+        // Buttons & wall-attached Blöcke
+        if (controller.getBlockData() instanceof org.bukkit.block.data.FaceAttachable) {
+            org.bukkit.block.data.FaceAttachable fa = (org.bukkit.block.data.FaceAttachable) controller.getBlockData();
+            switch (fa.getAttachedFace()) {
+                case FLOOR:
+                    return controller.getRelative(BlockFace.DOWN);
+                case CEILING:
+                    return controller.getRelative(BlockFace.UP);
+                case WALL:
+                    if (controller.getBlockData() instanceof org.bukkit.block.data.Directional) {
+                        org.bukkit.block.data.Directional d = (org.bukkit.block.data.Directional) controller.getBlockData();
+                        return controller.getRelative(d.getFacing().getOppositeFace());
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        // Schilder
+        if (m.name().endsWith("_SIGN")) {
+            if (m.name().contains("WALL") && controller.getBlockData() instanceof org.bukkit.block.data.Directional) {
+                org.bukkit.block.data.Directional d = (org.bukkit.block.data.Directional) controller.getBlockData();
+                return controller.getRelative(d.getFacing().getOppositeFace());
+            }
+            return controller.getRelative(BlockFace.DOWN);
+        }
+
+        return null;
+    }
+
+    /** Löst eine Secret Wall aus. autoClose=false: kein automatisches Schließen (für Sensoren). */
+    public boolean triggerSecretWall(String buttonId) {
+        return triggerSecretWall(buttonId, true);
+    }
+
+    public boolean triggerSecretWall(String buttonId, boolean autoClose) {
+        if (buttonId == null) return false;
+        List<String> secretBlocks = dataManager.getSecretBlocks(buttonId);
+        if (secretBlocks == null || secretBlocks.isEmpty()) return false;
+        if (openSecretWalls.containsKey(buttonId)) return false;
+
+        List<SecretBlockSnapshot> snapshots = new ArrayList<>();
+        for (String locStr : secretBlocks) {
+            Location l = parseLocation(locStr);
+            if (l == null) continue;
+            Block b = l.getBlock();
+            if (b.getType() == Material.AIR) continue;
+            snapshots.add(new SecretBlockSnapshot(locStr, b.getType().name(), b.getBlockData().getAsString(), l.getBlockX(), l.getBlockY(), l.getBlockZ()));
+        }
+
+        if (snapshots.isEmpty()) return false;
+        openSecretWalls.put(buttonId, snapshots);
+
+        String animation = normalizeSecretAnimation(dataManager.getSecretAnimation(buttonId));
+        List<SecretBlockSnapshot> openOrder = getOrderedSecretSnapshots(snapshots, animation, true);
+        long openStepTicks = getSecretStepTicks(animation);
+        long[] openDelays = computeDelays(openOrder, animation, openStepTicks);
+        scheduleSecretOpen(openOrder, openDelays);
+
+        if (autoClose) {
+            long delayMs = Math.max(1000L, dataManager.getSecretRestoreDelayMs(buttonId));
+            long delayTicks = Math.max(1L, delayMs / 50L);
+            long openDurationTicks = openDelays.length == 0 ? 0L : openDelays[openDelays.length - 1];
+            getServer().getScheduler().runTaskLater(this,
+                () -> closeSecretWall(buttonId), openDurationTicks + delayTicks);
+        }
+        return true;
+    }
+
+    public void closeSecretWall(String buttonId) {
+        List<SecretBlockSnapshot> snapshots = openSecretWalls.remove(buttonId);
+        if (snapshots == null || snapshots.isEmpty()) return;
+
+        String animation = normalizeSecretAnimation(dataManager.getSecretAnimation(buttonId));
+        List<SecretBlockSnapshot> closeOrder = getOrderedSecretSnapshots(snapshots, animation, false);
+        long closeStepTicks = getSecretStepTicks(animation);
+        long[] closeDelays = computeDelays(closeOrder, animation, closeStepTicks);
+        scheduleSecretClose(closeOrder, closeDelays);
+    }
+
+    private void scheduleSecretOpen(List<SecretBlockSnapshot> snapshots, long[] delays) {
+        for (int i = 0; i < snapshots.size(); i++) {
+            SecretBlockSnapshot s = snapshots.get(i);
+            long when = delays[i];
+            getServer().getScheduler().runTaskLater(this, () -> {
+                Location l = parseLocation(s.loc);
+                if (l == null) return;
+                Block b = l.getBlock();
+                if (b.getType() != Material.AIR) {
+                    b.setType(Material.AIR, false);
+                }
+            }, when);
+        }
+    }
+
+    private void scheduleSecretClose(List<SecretBlockSnapshot> snapshots, long[] delays) {
+        for (int i = 0; i < snapshots.size(); i++) {
+            SecretBlockSnapshot s = snapshots.get(i);
+            long when = delays[i];
+            getServer().getScheduler().runTaskLater(this, () -> {
+                Location l = parseLocation(s.loc);
+                if (l == null) return;
+                Block b = l.getBlock();
+                Material m = Material.matchMaterial(s.materialName);
+                if (m == null || m == Material.AIR) return;
+                b.setType(m, false);
+                try {
+                    b.setBlockData(Bukkit.createBlockData(s.blockData), false);
+                } catch (IllegalArgumentException ignored) {
+                    // Fallback: Material wurde bereits gesetzt
+                }
+            }, when);
+        }
+    }
+
+    private List<SecretBlockSnapshot> getOrderedSecretSnapshots(List<SecretBlockSnapshot> source, String animation, boolean opening) {
+        List<SecretBlockSnapshot> ordered = new ArrayList<>(source);
+        switch (animation) {
+            case "instant":
+            case "wave":
+                if (!opening) {
+                    java.util.Collections.reverse(ordered);
+                }
+                return ordered;
+            case "reverse":
+                if (opening) {
+                    java.util.Collections.reverse(ordered);
+                }
+                return ordered;
+            case "center":
+                double centerX = 0;
+                double centerY = 0;
+                double centerZ = 0;
+                for (SecretBlockSnapshot s : ordered) {
+                    centerX += s.x;
+                    centerY += s.y;
+                    centerZ += s.z;
+                }
+                centerX /= ordered.size();
+                centerY /= ordered.size();
+                centerZ /= ordered.size();
+                final double cx = centerX;
+                final double cy = centerY;
+                final double cz = centerZ;
+                ordered.sort((a, b) -> Double.compare(distanceSquared(a, cx, cy, cz), distanceSquared(b, cx, cy, cz)));
+                if (!opening) {
+                    java.util.Collections.reverse(ordered);
+                }
+                return ordered;
+            default:
+                return ordered;
+        }
+    }
+
+    private long[] computeDelays(List<SecretBlockSnapshot> ordered, String animation, long stepTicks) {
+        long[] delays = new long[ordered.size()];
+        if (!animation.equals("center")) {
+            for (int i = 0; i < ordered.size(); i++) {
+                delays[i] = i * stepTicks;
+            }
+            return delays;
+        }
+        // Für center: Blöcke im gleichen Abstandsring bekommen denselben Tick
+        double cx = 0, cy = 0, cz = 0;
+        for (SecretBlockSnapshot s : ordered) { cx += s.x; cy += s.y; cz += s.z; }
+        cx /= ordered.size(); cy /= ordered.size(); cz /= ordered.size();
+        final double fcx = cx, fcy = cy, fcz = cz;
+        double prev = -1;
+        int rank = -1;
+        for (int i = 0; i < ordered.size(); i++) {
+            double d = distanceSquared(ordered.get(i), fcx, fcy, fcz);
+            if (i == 0 || Math.abs(d - prev) > 0.01) {
+                rank++;
+                prev = d;
+            }
+            delays[i] = rank * stepTicks;
+        }
+        return delays;
+    }
+
+    private double distanceSquared(SecretBlockSnapshot s, double centerX, double centerY, double centerZ) {
+        double dx = s.x - centerX;
+        double dy = s.y - centerY;
+        double dz = s.z - centerZ;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private long getSecretStepTicks(String animation) {
+        return animation.equals("instant") ? 0L : 2L;
+    }
+
+    private boolean isValidSecretAnimation(String animation) {
+        return animation.equals("instant") || animation.equals("wave")
+            || animation.equals("reverse") || animation.equals("center");
+    }
+
+    private String normalizeSecretAnimation(String animation) {
+        if (animation == null) return "wave";
+        return animation.trim().toLowerCase();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Undo-System
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void saveUndoAction(String buttonId, UndoAction action) {
+        lastActions.put(buttonId, action);
+    }
+
+    private void undoAction(String buttonId, UndoAction action, Player player) {
+        switch (action.type) {
+            case RENAME:
+                dataManager.setControllerName(buttonId, (String) action.oldValue);
+                player.sendMessage("§a✔ Rename rückgängig gemacht.");
+                break;
+            case TRUST_ADD:
+                dataManager.removeTrustedPlayer(buttonId, java.util.UUID.fromString((String) action.oldValue));
+                player.sendMessage("§a✔ Trust-Hinzufügung rückgängig gemacht.");
+                break;
+            case TRUST_REMOVE:
+                dataManager.addTrustedPlayer(buttonId, java.util.UUID.fromString((String) action.oldValue));
+                player.sendMessage("§a✔ Trust-Entfernung rückgängig gemacht.");
+                break;
+            case PUBLIC:
+            case PRIVATE:
+                boolean wasPublic = Boolean.parseBoolean((String) action.oldValue);
+                dataManager.setPublic(buttonId, wasPublic);
+                player.sendMessage("§a✔ Status rückgängig gemacht: " + (wasPublic ? "§aÖffentlich" : "§cPrivat"));
+                break;
+        }
+        lastActions.remove(buttonId);
+    }
+
+    private void cleanupOldUndoActions() {
+        long currentTime = System.currentTimeMillis();
+        long timeout = 5 * 60 * 1000; // 5 Minuten
+        lastActions.entrySet().removeIf(entry -> 
+            currentTime - entry.getValue().timestamp > timeout);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Undo Action Klasse
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public static class UndoAction {
+        public enum Type { RENAME, TRUST_ADD, TRUST_REMOVE, PUBLIC, PRIVATE }
+
+        public Type type;
+        public Object oldValue;
+        public Object newValue;
+        public long timestamp;
+
+        public UndoAction(Type type, Object oldValue, Object newValue) {
+            this.type = type;
+            this.oldValue = oldValue;
+            this.newValue = newValue;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
+
+    public static class SecretBlockSnapshot {
+        public final String loc;
+        public final String materialName;
+        public final String blockData;
+        public final int x;
+        public final int y;
+        public final int z;
+
+        public SecretBlockSnapshot(String loc, String materialName, String blockData, int x, int y, int z) {
+            this.loc = loc;
+            this.materialName = materialName;
+            this.blockData = blockData;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+    }
+
 }

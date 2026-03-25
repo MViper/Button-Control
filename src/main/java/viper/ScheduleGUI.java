@@ -16,11 +16,14 @@ import org.bukkit.inventory.meta.ItemMeta;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * GUI zur Konfiguration der zeitgesteuerten Automatisierung eines Controllers.
  *
  * Layout (9×3 = 27 Slots):
+ *  Slot 4  – Abschuss-Verzögerung Werfer/Spender (REPEATER)  ← Links/Rechts: ±1 Tick | Shift: ±5
+ *  Slot 6  – Schuss-Modus (COMPARATOR)  ← Klick: gleichzeitig / nacheinander
  *  Slot 10 – Öffnungszeit  (LIME_DYE  / Sonne)  ← Links/Rechts: ±1h  |  Shift: ±15min
  *  Slot 13 – Aktivierung an/aus (LEVER)
  *  Slot 16 – Schließzeit   (RED_DYE   / Mond)   ← Links/Rechts: ±1h  |  Shift: ±15min
@@ -39,6 +42,8 @@ public class ScheduleGUI implements Listener {
     // Aktuelle Werte während die GUI offen ist
     private long openTime;
     private long closeTime;
+    private int shotDelayTicks;
+    private String triggerMode;
     private boolean enabled;
 
     public ScheduleGUI(ButtonControl plugin, Player player, String buttonId) {
@@ -51,8 +56,16 @@ public class ScheduleGUI implements Listener {
         // Gespeicherte Werte laden (oder Standardwerte)
         long savedOpen  = dataManager.getScheduleOpenTime(buttonId);
         long savedClose = dataManager.getScheduleCloseTime(buttonId);
+        int savedShotDelay = dataManager.getScheduleShotDelayTicks(buttonId);
+        String savedTriggerMode = dataManager.getScheduleTriggerMode(buttonId);
         this.openTime   = savedOpen  >= 0 ? savedOpen  : plugin.timeToTicks(7, 0);  // 07:00
         this.closeTime  = savedClose >= 0 ? savedClose : plugin.timeToTicks(19, 0); // 19:00
+        this.shotDelayTicks = savedShotDelay >= 0
+            ? savedShotDelay
+            : Math.max(1, plugin.getConfigManager().getConfig().getInt("timed-container-shot-delay-ticks", 2));
+        this.triggerMode = normalizeTriggerMode(savedTriggerMode != null
+            ? savedTriggerMode
+            : plugin.getConfigManager().getConfig().getString("timed-container-trigger-mode", "simultaneous"));
         this.enabled    = savedOpen  >= 0;
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
@@ -71,6 +84,12 @@ public class ScheduleGUI implements Listener {
         // Füllung
         ItemStack filler = makeItem(Material.GRAY_STAINED_GLASS_PANE, ChatColor.RESET + "");
         for (int i = 0; i < 27; i++) inv.setItem(i, filler);
+
+        // Slot 4 – Abschuss-Verzögerung
+        inv.setItem(4, makeDelayItem());
+
+        // Slot 6 – Modus
+        inv.setItem(6, makeModeItem());
 
         // Slot 10 – Öffnungszeit
         inv.setItem(10, makeTimeItem(
@@ -104,6 +123,65 @@ public class ScheduleGUI implements Listener {
         inv.setItem(22, makeItem(Material.EMERALD,
             "§a§lSpeichern & Schließen",
             "§7Speichert den aktuellen Zeitplan."));
+    }
+
+    private ItemStack makeDelayItem() {
+        List<String> lore = new ArrayList<>();
+        lore.add("§e§l" + shotDelayTicks + " Ticks §7(" + formatShotDelaySeconds() + "s§7)");
+        if (isSequentialMode()) {
+            lore.add("§7Aktuell: §f" + shotDelayTicks + " Ticks zwischen einzelnen Geräten");
+        } else if (shotDelayTicks <= 1) {
+            lore.add("§7Aktuell: §falle verbundenen Werfer schießen jeden Tick");
+        } else {
+            lore.add("§7Aktuell: §f" + shotDelayTicks + " Ticks zwischen gemeinsamen Schüssen");
+        }
+        lore.add("");
+        lore.add("§7Linksklick: §f+1 Tick");
+        lore.add("§7Rechtsklick: §f−1 Tick");
+        lore.add("§7Shift+Links: §f+5 Ticks");
+        lore.add("§7Shift+Rechts: §f−5 Ticks");
+        lore.add("§8(1 Tick = schnellstmöglich)");
+
+        ItemStack item = new ItemStack(Material.REPEATER);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName("§b§lAbschuss-Verzögerung");
+            meta.setLore(lore);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private ItemStack makeModeItem() {
+        List<String> lore = new ArrayList<>();
+        lore.add(isSequentialMode()
+            ? "§e§lNacheinander"
+            : "§e§lGleichzeitig");
+        lore.add("");
+        lore.add("§7Klick: §fModus wechseln");
+        lore.add("§8Gleichzeitig = alle Werfer zusammen");
+        lore.add("§8Nacheinander = Geräte rotieren der Reihe nach");
+
+        ItemStack item = new ItemStack(Material.COMPARATOR);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName("§d§lSchuss-Modus");
+            meta.setLore(lore);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private String formatShotDelaySeconds() {
+        return String.format(Locale.US, "%.2f", shotDelayTicks / 20.0);
+    }
+
+    private boolean isSequentialMode() {
+        return "sequential".equals(triggerMode);
+    }
+
+    private String normalizeTriggerMode(String mode) {
+        return "sequential".equalsIgnoreCase(mode) ? "sequential" : "simultaneous";
     }
 
     private ItemStack makeTimeItem(Material mat, String name, long ticks, String... loreLines) {
@@ -153,7 +231,20 @@ public class ScheduleGUI implements Listener {
         // Schrittgröße: Shift = 15 Min (250 Ticks), sonst 1 Std (1000 Ticks)
         long step = event.isShiftClick() ? 250L : 1000L;
 
-        if (slot == 10) {
+        if (slot == 4) {
+            int delayStep = event.isShiftClick() ? 5 : 1;
+            if (event.isLeftClick())  shotDelayTicks += delayStep;
+            if (event.isRightClick()) shotDelayTicks -= delayStep;
+            if (shotDelayTicks < 1) shotDelayTicks = 1;
+            if (shotDelayTicks > 200) shotDelayTicks = 200;
+            inv.setItem(4, makeDelayItem());
+
+        } else if (slot == 6) {
+            triggerMode = isSequentialMode() ? "simultaneous" : "sequential";
+            inv.setItem(4, makeDelayItem());
+            inv.setItem(6, makeModeItem());
+
+        } else if (slot == 10) {
             // Öffnungszeit anpassen
             if (event.isLeftClick())  openTime  = (openTime  + step + 24000) % 24000;
             if (event.isRightClick()) openTime  = (openTime  - step + 24000) % 24000;
@@ -203,10 +294,18 @@ public class ScheduleGUI implements Listener {
         if (enabled) {
             dataManager.setScheduleOpenTime(buttonId, openTime);
             dataManager.setScheduleCloseTime(buttonId, closeTime);
+            dataManager.setScheduleShotDelayTicks(buttonId, shotDelayTicks);
+            dataManager.setScheduleTriggerMode(buttonId, triggerMode);
             player.sendMessage("§a[BC] §7Zeitplan gespeichert: §aÖffnet §7um §e"
                 + plugin.ticksToTime(openTime)
                 + " §7· §cSchließt §7um §e"
-                + plugin.ticksToTime(closeTime));
+                + plugin.ticksToTime(closeTime)
+                + " §7· §bDelay §e"
+                + shotDelayTicks
+                + "§7 Ticks §8("
+                + formatShotDelaySeconds()
+                + "s§8) §7· §dModus §e"
+                + (isSequentialMode() ? "nacheinander" : "gleichzeitig"));
         } else {
             dataManager.clearSchedule(buttonId);
             player.sendMessage("§7[BC] Zeitplan deaktiviert.");

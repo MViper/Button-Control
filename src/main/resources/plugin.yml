@@ -1,5 +1,5 @@
 name: ButtonControl
-version: 1.7
+version: 1.8
 main: viper.ButtonControl
 api-version: 1.21
 author: M_Viper
@@ -11,7 +11,7 @@ description: >
 commands:
   bc:
     description: Hauptbefehl für ButtonControl
-    usage: /bc <info|reload|note|list|rename|schedule|trust|untrust|public|private>
+    usage: "/bc <info|reload|note|list|rename|schedule|trust|untrust|public|private|undo|secret> (Secret: select|info|add|remove|clear|delay|animation)"
     aliases: [buttoncontrol]
 
 permissions:

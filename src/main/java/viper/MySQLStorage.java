@@ -45,7 +45,8 @@ public class MySQLStorage {
             plugin.getLogger().info("MySQL aktiviert.");
             return true;
         } catch (Exception e) {
-            plugin.getLogger().warning("MySQL konnte nicht initialisiert werden, verwende data.yml: " + e.getMessage());
+            plugin.getLogger().warning("MySQL Verbindung fehlgeschlagen - verwende data.yml für Datenspeicherung.");
+            plugin.getLogger().fine("Fehlerdetails: " + e.getMessage());
             return false;
         }
     }
@@ -93,7 +94,9 @@ public class MySQLStorage {
             st.executeUpdate("CREATE TABLE IF NOT EXISTS bc_schedules ("
                 + "button_id VARCHAR(64) PRIMARY KEY,"
                 + "open_time BIGINT,"
-                + "close_time BIGINT"
+                + "close_time BIGINT,"
+                + "shot_delay_ticks INT,"
+                + "trigger_mode VARCHAR(16)"
                 + ")");
 
             st.executeUpdate("CREATE TABLE IF NOT EXISTS bc_trust ("
@@ -117,6 +120,27 @@ public class MySQLStorage {
                 + "radius DOUBLE,"
                 + "delay_ms BIGINT"
                 + ")");
+
+            st.executeUpdate("CREATE TABLE IF NOT EXISTS bc_secret_walls ("
+                + "button_id VARCHAR(64) NOT NULL,"
+                + "block_location VARCHAR(128) NOT NULL,"
+                + "PRIMARY KEY (button_id, block_location)"
+                + ")");
+
+            st.executeUpdate("CREATE TABLE IF NOT EXISTS bc_secret_settings ("
+                + "button_id VARCHAR(64) PRIMARY KEY,"
+                + "delay_ms BIGINT NOT NULL,"
+                + "animation VARCHAR(16) NOT NULL DEFAULT 'wave'"
+                + ")");
+
+            st.executeUpdate("ALTER TABLE bc_schedules "
+                + "ADD COLUMN IF NOT EXISTS shot_delay_ticks INT");
+
+            st.executeUpdate("ALTER TABLE bc_schedules "
+                + "ADD COLUMN IF NOT EXISTS trigger_mode VARCHAR(16)");
+
+            st.executeUpdate("ALTER TABLE bc_secret_settings "
+                + "ADD COLUMN IF NOT EXISTS animation VARCHAR(16) NOT NULL DEFAULT 'wave'");
         }
     }
 
@@ -195,7 +219,9 @@ public class MySQLStorage {
             "DELETE FROM bc_public_status WHERE button_id = ?",
             "DELETE FROM bc_trust WHERE button_id = ?",
             "DELETE FROM bc_schedules WHERE button_id = ?",
-            "DELETE FROM bc_button_connections WHERE button_id = ?"
+            "DELETE FROM bc_button_connections WHERE button_id = ?",
+            "DELETE FROM bc_secret_walls WHERE button_id = ?",
+            "DELETE FROM bc_secret_settings WHERE button_id = ?"
         };
         for (String q : queries) {
             try (PreparedStatement ps = getConnection().prepareStatement(q)) {
@@ -295,12 +321,11 @@ public class MySQLStorage {
     }
 
     public void setScheduleOpenTime(String buttonId, long ticks) {
-        String q = "INSERT INTO bc_schedules (button_id, open_time, close_time) VALUES (?, ?, COALESCE((SELECT close_time FROM bc_schedules WHERE button_id = ?), -1))"
+        String q = "INSERT INTO bc_schedules (button_id, open_time, close_time, shot_delay_ticks, trigger_mode) VALUES (?, ?, -1, -1, 'simultaneous')"
             + " ON DUPLICATE KEY UPDATE open_time = VALUES(open_time)";
         try (PreparedStatement ps = getConnection().prepareStatement(q)) {
             ps.setString(1, buttonId);
             ps.setLong(2, ticks);
-            ps.setString(3, buttonId);
             ps.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().warning("MySQL setScheduleOpenTime Fehler: " + e.getMessage());
@@ -321,12 +346,11 @@ public class MySQLStorage {
     }
 
     public void setScheduleCloseTime(String buttonId, long ticks) {
-        String q = "INSERT INTO bc_schedules (button_id, open_time, close_time) VALUES (?, COALESCE((SELECT open_time FROM bc_schedules WHERE button_id = ?), -1), ?)"
+        String q = "INSERT INTO bc_schedules (button_id, open_time, close_time, shot_delay_ticks, trigger_mode) VALUES (?, -1, ?, -1, 'simultaneous')"
             + " ON DUPLICATE KEY UPDATE close_time = VALUES(close_time)";
         try (PreparedStatement ps = getConnection().prepareStatement(q)) {
             ps.setString(1, buttonId);
-            ps.setString(2, buttonId);
-            ps.setLong(3, ticks);
+            ps.setLong(2, ticks);
             ps.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().warning("MySQL setScheduleCloseTime Fehler: " + e.getMessage());
@@ -343,6 +367,58 @@ public class MySQLStorage {
         } catch (SQLException e) {
             plugin.getLogger().warning("MySQL getScheduleCloseTime Fehler: " + e.getMessage());
             return -1;
+        }
+    }
+
+    public void setScheduleShotDelayTicks(String buttonId, int ticks) {
+        String q = "INSERT INTO bc_schedules (button_id, open_time, close_time, shot_delay_ticks, trigger_mode) VALUES (?, -1, -1, ?, 'simultaneous')"
+            + " ON DUPLICATE KEY UPDATE shot_delay_ticks = VALUES(shot_delay_ticks)";
+        try (PreparedStatement ps = getConnection().prepareStatement(q)) {
+            ps.setString(1, buttonId);
+            ps.setInt(2, ticks);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("MySQL setScheduleShotDelayTicks Fehler: " + e.getMessage());
+        }
+    }
+
+    public int getScheduleShotDelayTicks(String buttonId) {
+        String q = "SELECT shot_delay_ticks FROM bc_schedules WHERE button_id = ? LIMIT 1";
+        try (PreparedStatement ps = getConnection().prepareStatement(q)) {
+            ps.setString(1, buttonId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return -1;
+                int delay = rs.getInt(1);
+                return rs.wasNull() ? -1 : delay;
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("MySQL getScheduleShotDelayTicks Fehler: " + e.getMessage());
+            return -1;
+        }
+    }
+
+    public void setScheduleTriggerMode(String buttonId, String mode) {
+        String q = "INSERT INTO bc_schedules (button_id, open_time, close_time, shot_delay_ticks, trigger_mode) VALUES (?, -1, -1, -1, ?)"
+            + " ON DUPLICATE KEY UPDATE trigger_mode = VALUES(trigger_mode)";
+        try (PreparedStatement ps = getConnection().prepareStatement(q)) {
+            ps.setString(1, buttonId);
+            ps.setString(2, mode);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("MySQL setScheduleTriggerMode Fehler: " + e.getMessage());
+        }
+    }
+
+    public String getScheduleTriggerMode(String buttonId) {
+        String q = "SELECT trigger_mode FROM bc_schedules WHERE button_id = ? LIMIT 1";
+        try (PreparedStatement ps = getConnection().prepareStatement(q)) {
+            ps.setString(1, buttonId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("MySQL getScheduleTriggerMode Fehler: " + e.getMessage());
+            return null;
         }
     }
 
@@ -487,6 +563,104 @@ public class MySQLStorage {
             ps.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().warning("MySQL removeMotionSensorSettings Fehler: " + e.getMessage());
+        }
+    }
+
+    public void setSecretBlocks(String buttonId, List<String> blocks) {
+        String del = "DELETE FROM bc_secret_walls WHERE button_id = ?";
+        String ins = "INSERT INTO bc_secret_walls (button_id, block_location) VALUES (?, ?)";
+        try (PreparedStatement psDel = getConnection().prepareStatement(del);
+             PreparedStatement psIns = getConnection().prepareStatement(ins)) {
+            psDel.setString(1, buttonId);
+            psDel.executeUpdate();
+
+            for (String block : blocks) {
+                psIns.setString(1, buttonId);
+                psIns.setString(2, block);
+                psIns.addBatch();
+            }
+            psIns.executeBatch();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("MySQL setSecretBlocks Fehler: " + e.getMessage());
+        }
+    }
+
+    public List<String> getSecretBlocks(String buttonId) {
+        List<String> result = new ArrayList<>();
+        String q = "SELECT block_location FROM bc_secret_walls WHERE button_id = ?";
+        try (PreparedStatement ps = getConnection().prepareStatement(q)) {
+            ps.setString(1, buttonId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) result.add(rs.getString(1));
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("MySQL getSecretBlocks Fehler: " + e.getMessage());
+        }
+        return result;
+    }
+
+    public void setSecretRestoreDelayMs(String buttonId, long delayMs) {
+        String q = "INSERT INTO bc_secret_settings (button_id, delay_ms) VALUES (?, ?)"
+            + " ON DUPLICATE KEY UPDATE delay_ms = VALUES(delay_ms)";
+        try (PreparedStatement ps = getConnection().prepareStatement(q)) {
+            ps.setString(1, buttonId);
+            ps.setLong(2, delayMs);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("MySQL setSecretRestoreDelayMs Fehler: " + e.getMessage());
+        }
+    }
+
+    public long getSecretRestoreDelayMs(String buttonId) {
+        String q = "SELECT delay_ms FROM bc_secret_settings WHERE button_id = ? LIMIT 1";
+        try (PreparedStatement ps = getConnection().prepareStatement(q)) {
+            ps.setString(1, buttonId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getLong(1) : 5000L;
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("MySQL getSecretRestoreDelayMs Fehler: " + e.getMessage());
+            return 5000L;
+        }
+    }
+
+    public void setSecretAnimation(String buttonId, String animation) {
+        String q = "INSERT INTO bc_secret_settings (button_id, delay_ms, animation) VALUES (?, COALESCE((SELECT delay_ms FROM bc_secret_settings WHERE button_id = ?), 5000), ?)"
+            + " ON DUPLICATE KEY UPDATE animation = VALUES(animation)";
+        try (PreparedStatement ps = getConnection().prepareStatement(q)) {
+            ps.setString(1, buttonId);
+            ps.setString(2, buttonId);
+            ps.setString(3, animation);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("MySQL setSecretAnimation Fehler: " + e.getMessage());
+        }
+    }
+
+    public String getSecretAnimation(String buttonId) {
+        String q = "SELECT animation FROM bc_secret_settings WHERE button_id = ? LIMIT 1";
+        try (PreparedStatement ps = getConnection().prepareStatement(q)) {
+            ps.setString(1, buttonId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : "wave";
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("MySQL getSecretAnimation Fehler: " + e.getMessage());
+            return "wave";
+        }
+    }
+
+    public void clearSecret(String buttonId) {
+        String q1 = "DELETE FROM bc_secret_walls WHERE button_id = ?";
+        String q2 = "DELETE FROM bc_secret_settings WHERE button_id = ?";
+        try (PreparedStatement ps1 = getConnection().prepareStatement(q1);
+             PreparedStatement ps2 = getConnection().prepareStatement(q2)) {
+            ps1.setString(1, buttonId);
+            ps1.executeUpdate();
+            ps2.setString(1, buttonId);
+            ps2.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("MySQL clearSecret Fehler: " + e.getMessage());
         }
     }
 
